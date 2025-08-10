@@ -1,17 +1,20 @@
 {
   "name": "mc-rcon-webgui",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "private": true,
+  "description": "Minecraft RCON web panel (stable rcon package, SPA served from /app/public)",
+  "main": "server.js",
   "type": "commonjs",
   "scripts": {
     "start": "node app/server.js",
     "postinstall": "node -e \"try{require('fs').mkdirSync('app/public',{recursive:true})}catch(e){}\""
   },
   "dependencies": {
-  "rcon-client": "^5.0.0-alpha.2",
-  "express": "^4.19.2",
-  "basic-auth": "^2.0.1",
-  "dotenv": "^16.4.5",
-  "sqlite3": "^5.1.7"
- }
+    "better-sqlite3": "^9.4.0",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "express-basic-auth": "^1.2.1",
+    "morgan": "^1.10.0",
+    "rcon": "^3.0.1"
+  }
 }
