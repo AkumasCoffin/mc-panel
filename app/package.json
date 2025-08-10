@@ -1,6 +1,6 @@
 {
   "name": "mc-rcon-webgui",
-  "version": "1.8.0",
+  "version": "1.8.1",
   "private": true,
   "description": "Minecraft WebGUI with RCON, cron restarts, SQLite history, presets",
   "main": "server.js",
