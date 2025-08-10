@@ -1,184 +1,637 @@
-<!doctype html>
-<html>
+<!DOCTYPE html>
+<html lang="en">
 <head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Minecraft RCON Panel</title>
-<style>
-:root{
-  --bg:#0b0f14;--panel:#0f1524;--card:#111a2d;--stroke:#1e2a46;--text:#e9f0ff;--muted:#9db0cc;
-  --accent:#2a66ff;--accent-2:#39ff14;--danger:#ff4d57;--warn:#f7b731;--ok:#2ecc71
-}
-*{box-sizing:border-box}html,body{height:100%}
-body{margin:0;background:linear-gradient(180deg,#0b0f14,#0c1220 60%,#0a0f1a);color:var(--text);font:14px/1.5 system-ui,Segoe UI,Roboto,Ubuntu}
-.sidebar{position:fixed;inset:0 auto 0 0;width:260px;background:linear-gradient(180deg,#0f1524,#0b1020);border-right:1px solid var(--stroke);padding:18px}
-.brand{display:flex;gap:10px;align-items:center;margin-bottom:16px}
-.logo{width:28px;height:28px;border-radius:6px;background:radial-gradient(circle at 30% 30%, #48ff48, #146614)}
-.brand h1{font-size:16px;margin:0;color:#cfe2ff}
-.nav a{display:block;padding:10px 12px;border-radius:10px;color:#cbd5e0;text-decoration:none;margin:5px 0;border:1px solid transparent}
-.nav a.active,.nav a:hover{background:#14203a;border-color:#21325a}
-.main{margin-left:260px;min-height:100%;padding:18px}
-.header{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
-.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
-.card{background:var(--card);border:1px solid var(--stroke);border-radius:14px;padding:14px;box-shadow:0 8px 24px rgba(0,0,0,.25)}
-h2{margin:0 0 8px 0;font-size:18px}
-h3{margin:0 0 8px 0;font-size:15px;color:#cfe2ff}
-.small{color:var(--muted);font-size:12px}
-input,select,textarea{width:100%;padding:10px;border-radius:10px;background:#0e1628;border:1px solid var(--stroke);color:#e6f1ff;margin:6px 0}
-textarea{min-height:86px;resize:vertical}
-.btn{background:var(--accent);color:#fff;border:none;border-radius:10px;padding:9px 12px;cursor:pointer}
-.btn.ghost{background:transparent;border:1px solid var(--stroke)}
-.btn.danger{background:var(--danger)}
-.btn.ok{background:var(--ok)}
-table{width:100%;border-collapse:collapse}
-th,td{padding:8px;border-bottom:1px solid #1a2540}th{color:#a9bbd9;text-align:left;font-weight:600}
-.modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;padding:16px}
-.win{background:#0f172a;border:1px solid #223355;border-radius:12px;max-width:900px;width:100%;max-height:85vh;overflow:auto;padding:16px}
-pre{white-space:pre-wrap;background:#0c1426;padding:10px;border-radius:10px}
-.toast{position:fixed;right:16px;bottom:16px;background:#0f172a;border:1px solid #213358;padding:10px 12px;border-radius:10px;display:none}
-.tag{display:inline-block;border:1px solid #2753a6;color:#cfe2ff;background:#0f1c39;border-radius:999px;padding:2px 8px;font-size:12px}
-/* Ban cards */
-.bubbles{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
-.bubble{background:#0f172a;border:1px solid #223355;border-radius:14px;padding:12px}
-.bubble h4{margin:0 0 6px 0;font-size:14px;color:#cfe2ff}
-.meta{font-size:12px;color:#9db0cc;margin:6px 0}
-.kv{display:grid;grid-template-columns:90px 1fr;gap:6px;font-size:12px}
-.kv div{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.reason{margin-top:8px;padding:8px;border-radius:10px;background:#0c1426;border:1px solid #1b2b4d;font-size:12px}
-.badge{display:inline-block;font-size:11px;padding:2px 8px;border-radius:999px;border:1px solid #2a4ea2;background:#0f1c39;color:#cfe2ff;margin-left:6px}
-</style>
+  <meta charset="UTF-8" />
+  <title>Minecraft WebGUI</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root{
+      --bg:#0f1115; --panel:#151823; --muted:#8b90a3; --text:#e6e9ef;
+      --brand:#7c5cff; --brand-2:#44d3a8; --warn:#ffb020; --danger:#ff5d5d;
+      --border:#212535; --chip:#1b2030;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0; background:linear-gradient(180deg,#0f1115,#0d0f14);
+      color:var(--text); font:14px/1.4 system-ui,Segoe UI,Inter,Arial,sans-serif;
+    }
+    a{color:inherit; text-decoration:none}
+    .app{
+      display:grid; grid-template-columns:260px 1fr; min-height:100vh;
+    }
+
+    /* Sidebar */
+    .side{
+      position:sticky; top:0; height:100vh; padding:18px; border-right:1px solid var(--border);
+      background:rgba(13,16,22,.65); backdrop-filter: blur(8px);
+      display:flex; flex-direction:column; gap:14px;
+    }
+    .brand{
+      display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:12px;
+      background:linear-gradient(90deg,rgba(124,92,255,.15),rgba(68,211,168,.08));
+      border:1px solid var(--border);
+    }
+    .brand svg{width:22px; height:22px}
+    .brand h1{font-size:16px; margin:0}
+    .nav{display:flex; flex-direction:column; gap:6px; margin-top:8px}
+    .nav button{
+      display:flex; align-items:center; gap:10px; width:100%; background:transparent; color:var(--text);
+      border:1px solid transparent; padding:10px 12px; border-radius:10px; cursor:pointer;
+      text-align:left; transition:.15s;
+    }
+    .nav button:hover{background:var(--chip); border-color:var(--border)}
+    .nav button.active{background:linear-gradient(90deg,rgba(124,92,255,.18),rgba(68,211,168,.12)); border-color:#2a2f44}
+    .nav svg{width:16px;height:16px; opacity:.9}
+
+    .side .foot{
+      margin-top:auto; color:var(--muted); font-size:12px; opacity:.8
+    }
+
+    /* Main */
+    .main{padding:22px; }
+    .toolbar{display:flex; align-items:center; gap:10px; margin-bottom:16px}
+    .toolbar .chip{padding:6px 10px; background:var(--chip); border:1px solid var(--border); border-radius:999px; color:#cdd3e1}
+    .cards{display:grid; grid-template-columns: repeat(12, 1fr); gap:14px}
+    .card{
+      background:var(--panel); border:1px solid var(--border); border-radius:16px; padding:14px;
+      grid-column: span 12;
+    }
+    @media (min-width: 900px){
+      .card.half{grid-column: span 6}
+      .card.third{grid-column: span 4}
+      .card.two{grid-column: span 8}
+    }
+    .card h3{margin:0 0 10px 0; font-size:15px}
+    .muted{color:var(--muted)}
+    .split{display:flex; gap:8px; flex-wrap:wrap}
+    input[type=text], input[type=number], textarea, select{
+      background:#0d111a; color:var(--text); border:1px solid var(--border); border-radius:10px;
+      padding:10px 12px; width:100%;
+    }
+    .row{display:flex; gap:10px; flex-wrap:wrap}
+    .row > *{flex:1}
+    .btn{
+      background:#1a1f2e; color:#dfe6f3; border:1px solid var(--border); border-radius:10px;
+      padding:10px 12px; cursor:pointer; transition:.15s;
+    }
+    .btn:hover{filter:brightness(1.1)}
+    .btn.brand{background:linear-gradient(90deg,rgba(124,92,255,.25),rgba(68,211,168,.18)); border-color:#2a2f44}
+    .btn.warn{background:rgba(255,176,32,.12); border-color:#4b3b1a}
+    .btn.danger{background:rgba(255,93,93,.12); border-color:#4b1a1a}
+    .btn.ghost{background:transparent}
+    .tag{
+      background:#0e1220; border:1px solid var(--border); color:#cdd3e1; padding:4px 8px; border-radius:999px; font-size:12px
+    }
+    .grid{
+      display:grid; gap:10px
+    }
+    .grid.cols-2{grid-template-columns: repeat(2, 1fr)}
+    .grid.cols-3{grid-template-columns: repeat(3, 1fr)}
+    .grid.cols-4{grid-template-columns: repeat(4, 1fr)}
+    @media (max-width: 900px){ .grid.cols-2,.grid.cols-3,.grid.cols-4{grid-template-columns:1fr}}
+
+    /* Tables */
+    table{width:100%; border-collapse:collapse}
+    th,td{padding:8px 10px; border-bottom:1px dashed #23283a; text-align:left}
+    th{color:#aab3c7; font-weight:600; background:#121624; position:sticky; top:0}
+    tr:hover td{background:#111522}
+
+    /* Bans */
+    .ban-card{
+      display:flex; flex-direction:column; gap:8px; padding:12px; border:1px solid var(--border);
+      border-radius:14px; background:#121627;
+    }
+    .ban-card .head{display:flex; align-items:center; gap:8px; justify-content:space-between}
+    .ban-card .who{display:flex; align-items:center; gap:8px}
+    .pill{padding:2px 8px; border-radius:999px; font-size:12px; border:1px solid var(--border)}
+    .pill.player{background:rgba(124,92,255,.15)}
+    .pill.ip{background:rgba(68,211,168,.15)}
+
+    /* Modal */
+    .modal{
+      position:fixed; inset:0; display:none; align-items:center; justify-content:center;
+      background:rgba(0,0,0,.5); z-index:50; padding:20px;
+    }
+    .modal.open{display:flex}
+    .modal .sheet{
+      width:min(980px,100%); max-height:90vh; overflow:auto; background:var(--panel); border:1px solid var(--border);
+      border-radius:16px; padding:16px; box-shadow: 0 10px 40px rgba(0,0,0,.5);
+    }
+
+    /* Toast */
+    .toast{
+      position:fixed; right:16px; bottom:16px; background:#121827; border:1px solid var(--border); color:#e8eefc;
+      padding:10px 12px; border-radius:10px; z-index:60; display:none;
+    }
+    .toast.show{display:block; animation:fade 2.2s ease}
+    @keyframes fade{0%{opacity:0; transform:translateY(8px)} 10%{opacity:1; transform:none} 80%{opacity:1} 100%{opacity:0}}
+
+    .small{font-size:12px; color:#aab3c7}
+    .right{margin-left:auto}
+    .center{display:flex; justify-content:center; align-items:center}
+    .empty{padding:18px; border:1px dashed #2b3147; border-radius:12px; color:#aab3c7; background:#0f1320}
+  </style>
 </head>
 <body>
-<div class="sidebar">
-  <div class="brand"><div class="logo"></div><h1>MC RCON Panel</h1></div>
-  <div class="nav">
-    <a href="#" data-page="dash" class="active">🏠 Dashboard</a>
-    <a href="#" data-page="players">👥 Players</a>
-    <a href="#" data-page="bans">🚫 Bans</a>
-    <a href="#" data-page="rest">⏱️ Restarts</a>
-    <a href="#" data-page="cmd">⌨️ Commands</a>
-  </div>
-</div>
-
-<div class="main">
-  <!-- Dashboard -->
-  <div id="page-dash" class="page">
-    <div class="header">
-      <h2>Dashboard</h2>
-      <button id="btn-emerg" class="btn danger" disabled title="RCON disabled in log-mode">Emergency Restart</button>
-    </div>
-    <div class="cards">
-      <div class="card">
-        <h3>Status</h3>
-        <div>Server: <b id="status">—</b></div>
-        <div>Players: <b id="pcount">—</b></div>
-        <div>Next restart: <span id="next">None</span> <span id="nextRel" class="small"></span></div>
+  <div class="app">
+    <aside class="side">
+      <div class="brand">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 12l7-9 7 9-7 9-7-9z" stroke-width="1.5"/><path d="M3 12h18" stroke-width="1.5"/></svg>
+        <h1>MC Panel</h1>
+        <span class="right chip">Forge 1.20.1</span>
       </div>
-      <div class="card"><h3>Recent Online</h3><pre id="recent" class="small">—</pre></div>
-      <div class="card">
-        <h3>Quick Command</h3>
-        <input id="cmd" placeholder='list'/>
-        <div><button id="send" class="btn">Run</button></div>
-        <pre id="cout" class="small"></pre>
+      <div class="nav">
+        <button data-tab="status" class="active">
+          <svg viewBox="0 0 24 24"><path d="M3 12h6v9H3zM9 3h6v18H9zM15 8h6v13h-6z" fill="currentColor"/></svg>
+          Dashboard
+        </button>
+        <button data-tab="online">
+          <svg viewBox="0 0 24 24"><path d="M12 12a5 5 0 100-10 5 5 0 000 10zm-9 9a9 9 0 1118 0H3z" fill="currentColor"/></svg>
+          Online
+          <span class="right tag" id="onlineCount">0</span>
+        </button>
+        <button data-tab="players">
+          <svg viewBox="0 0 24 24"><path d="M16 13a4 4 0 10-8 0 7 7 0 00-7 7h22a7 7 0 00-7-7z" fill="currentColor"/></svg>
+          Players
+        </button>
+        <button data-tab="bans">
+          <svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1010 10A10.011 10.011 0 0012 2zm5 10a5 5 0 01-8.536 3.536L15.536 8.464A4.982 4.982 0 0117 12zm-10 0a5 5 0 018.536-3.536L8.464 15.536A4.982 4.982 0 017 12z" fill="currentColor"/></svg>
+          Bans
+        </button>
+        <button data-tab="schedules">
+          <svg viewBox="0 0 24 24"><path d="M7 2v3M17 2v3M3 9h18M5 5h14a2 2 0 012 2v13H3V7a2 2 0 012-2z" stroke="currentColor" fill="none" stroke-width="1.3"/></svg>
+          Scheduled Restarts
+        </button>
+        <button data-tab="audit">
+          <svg viewBox="0 0 24 24"><path d="M4 4h16v16H4zM8 8h8M8 12h8M8 16h5" stroke="currentColor" fill="none" stroke-width="1.3"/></svg>
+          Audit / Commands
+        </button>
+      </div>
+
+      <div class="foot small">
+        <div id="statusChip">Status: <span class="tag">loading…</span></div>
+        <div style="margin-top:6px">Next restart: <span id="nextRestart" class="tag">—</span></div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <div class="toolbar">
+        <div class="chip">Basic Auth protected</div>
+        <div id="tip" class="chip">Tip: click a player to open details</div>
+        <button class="btn ghost right" id="refreshBtn">↻ Refresh</button>
+      </div>
+
+      <div id="tab-status" class="cards">
+        <section class="card half">
+          <h3>Server Status</h3>
+          <div class="grid cols-2">
+            <div class="empty" id="statusBox">Checking…</div>
+            <div class="empty" id="restartBox">
+              <div>Next Restart</div>
+              <div class="row" style="margin-top:8px">
+                <div><span class="tag" id="nextRestart2">—</span></div>
+                <div><span class="tag" id="nextRestartIn">—</span></div>
+              </div>
+              <div class="small" style="margin-top:8px">Configured in <b>Scheduled Restarts</b>.</div>
+            </div>
+          </div>
+        </section>
+
+        <section class="card half">
+          <h3>Online Now</h3>
+          <div id="onlineList" class="grid cols-2"></div>
+          <div id="onlineEmpty" class="empty" style="display:none">No one online.</div>
+        </section>
+
+        <section class="card">
+          <h3>Quick “list” (emulated)</h3>
+          <div class="row">
+            <input id="cmdInput" type="text" value="list" />
+            <button class="btn brand" id="sendCmd">Run</button>
+          </div>
+          <pre id="cmdOut" class="small" style="margin-top:10px; white-space:pre-wrap; background:#0e1220; border:1px solid var(--border); padding:10px; border-radius:10px; min-height:40px"></pre>
+          <div class="small muted" style="margin-top:8px">Note: backend is in log-mode; only <code>list</code> is emulated.</div>
+        </section>
+      </div>
+
+      <div id="tab-online" class="cards" hidden>
+        <section class="card">
+          <h3>Online Players</h3>
+          <div id="onlineList2" class="grid cols-3"></div>
+          <div id="onlineEmpty2" class="empty" style="display:none">No one online.</div>
+        </section>
+      </div>
+
+      <div id="tab-players" class="cards" hidden>
+        <section class="card">
+          <h3>All Players</h3>
+          <div class="row" style="margin-bottom:8px">
+            <input id="playerSearch" type="text" placeholder="Search username…" />
+            <div class="chip" id="playerCountChip">0 players</div>
+          </div>
+          <div style="overflow:auto; max-height:70vh">
+            <table id="playersTable">
+              <thead><tr>
+                <th>User</th><th>UUID</th><th>Last IP</th><th>First Seen</th><th>Last Seen</th><th>Playtime</th>
+              </tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
+      <div id="tab-bans" class="cards" hidden>
+        <section class="card two">
+          <h3>Banned Players</h3>
+          <div id="banPlayers" class="grid cols-2"></div>
+          <div id="banPlayersEmpty" class="empty" style="display:none">No player bans found.</div>
+        </section>
+        <section class="card third">
+          <h3>Banned IPs</h3>
+          <div id="banIps" class="grid"></div>
+          <div id="banIpsEmpty" class="empty" style="display:none">No IP bans found.</div>
+        </section>
+      </div>
+
+      <div id="tab-schedules" class="cards" hidden>
+        <section class="card">
+          <h3>Add Schedule</h3>
+          <div class="row">
+            <input id="cronExpr" type="text" placeholder="Cron (e.g. 0 */6 * * *)" />
+            <input id="cronLabel" type="text" placeholder="Optional label" />
+            <button class="btn brand" id="addSchedule">Add</button>
+          </div>
+          <div class="small" style="margin-top:6px">
+            Tips:
+            <span class="tag">0 3 * * *</span> daily 03:00 ·
+            <span class="tag">0 */6 * * *</span> every 6h ·
+            <span class="tag">*/30 * * * *</span> every 30m
+          </div>
+        </section>
+
+        <section class="card">
+          <h3>Schedules</h3>
+          <div style="overflow:auto; max-height:60vh">
+            <table id="schedTable">
+              <thead><tr><th>ID</th><th>Label</th><th>Cron</th><th>Enabled</th><th>Actions</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
+      <div id="tab-audit" class="cards" hidden>
+        <section class="card">
+          <h3>Recent Audit Events</h3>
+          <div style="overflow:auto; max-height:70vh">
+            <table id="auditTable">
+              <thead><tr><th>When</th><th>Action</th><th>Payload</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <div class="small muted" style="margin-top:6px">Shows panel commands, schedule fires, and other panel actions.</div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <!-- Player Modal -->
+  <div class="modal" id="playerModal">
+    <div class="sheet">
+      <div class="row" style="align-items:center">
+        <h3 id="pmTitle" style="margin:0">Player</h3>
+        <button class="btn right" onclick="closePlayerModal()">Close</button>
+      </div>
+
+      <div class="grid cols-3" style="margin-top:10px">
+        <div class="card">
+          <h3>Profile</h3>
+          <div class="small"><b>UUID:</b> <span id="pmUuid">—</span></div>
+          <div class="small"><b>Last IP:</b> <span id="pmLastIp">—</span></div>
+          <div class="small"><b>First Seen:</b> <span id="pmFirst">—</span></div>
+          <div class="small"><b>Last Seen:</b> <span id="pmLast">—</span></div>
+          <div class="small"><b>Total Playtime:</b> <span id="pmPlaytime">—</span></div>
+        </div>
+        <div class="card two">
+          <h3>Sessions</h3>
+          <div style="overflow:auto; max-height:36vh">
+            <table id="pmSessions"><thead><tr><th>Login</th><th>Logout</th><th>Duration</th></tr></thead><tbody></tbody></table>
+          </div>
+        </div>
+        <div class="card two">
+          <h3>Commands</h3>
+          <div style="overflow:auto; max-height:36vh">
+            <table id="pmCommands"><thead><tr><th>When</th><th>Command</th></tr></thead><tbody></tbody></table>
+          </div>
+        </div>
+        <div class="card">
+          <h3>IPs Seen</h3>
+          <div style="overflow:auto; max-height:36vh">
+            <table id="pmIps"><thead><tr><th>IP</th><th>When</th></tr></thead><tbody></tbody></table>
+          </div>
+        </div>
       </div>
     </div>
   </div>
 
-  <!-- Players -->
-  <div id="page-players" class="page" style="display:none">
-    <div class="header"><h2>Players</h2><input id="psearch" placeholder="Search username/IP"/></div>
-    <div class="card">
-      <table id="ptbl"><thead><tr><th>Username</th><th>UUID</th><th>Latest IP</th><th>First</th><th>Last</th><th>Playtime</th><th></th></tr></thead><tbody></tbody></table>
-    </div>
-  </div>
+  <div id="toast" class="toast">Saved.</div>
 
-  <!-- Bans -->
-  <div id="page-bans" class="page" style="display:none">
-    <div class="header"><h2>Bans</h2></div>
-    <div class="card"><h3>Current Bans</h3><div id="bans-list" class="bubbles"></div></div>
-  </div>
+  <script>
+    // -------------- helpers
+    const $ = s => document.querySelector(s);
+    const $$ = s => Array.from(document.querySelectorAll(s));
 
-  <!-- Restarts -->
-  <div id="page-rest" class="page" style="display:none">
-    <div class="header"><h2>Scheduled Restarts</h2></div>
-    <div class="card">
-      <table id="stbl"><thead><tr><th>ID</th><th>Cron</th><th>Label</th><th>Enabled</th><th>Actions</th></tr></thead><tbody></tbody></table>
-      <div style="margin-top:8px">
-        <input id="cron" placeholder="Cron (e.g. 0 3 * * *)"/>
-        <input id="label" placeholder="Label (optional)"/>
-        <button id="sadd" class="btn">Add</button> <button id="sref" class="btn ghost">Refresh</button>
-      </div>
-      <div class="small" style="margin-top:6px">Tips: <span class="tag">0 3 * * *</span> daily 3:00 · <span class="tag">0 */6 * * *</span> every 6h · <span class="tag">*/30 * * *</span> every 30m</div>
-    </div>
-  </div>
+    function toast(msg='Saved.') {
+      const el = $('#toast'); el.textContent = msg; el.classList.add('show');
+      setTimeout(()=>el.classList.remove('show'), 2200);
+    }
+    function fmtDate(s){
+      if(!s) return '—';
+      const d = new Date(s); if (isNaN(d)) return s;
+      return d.toLocaleString();
+    }
+    function fmtDur(sec){
+      if(sec==null) return '—';
+      sec = Math.max(0, +sec|0);
+      const h = Math.floor(sec/3600), m = Math.floor((sec%3600)/60), s = sec%60;
+      const parts = []; if(h) parts.push(h+'h'); if(m||h) parts.push((h?String(m).padStart(2,'0'):m)+'m'); parts.push(String(s).padStart(2,'0')+'s');
+      return parts.join(' ');
+    }
+    async function jget(url){ const r = await fetch(url); if(!r.ok) throw new Error(await r.text()); return r.json(); }
+    async function jpost(url,data){ const r = await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data||{})}); if(!r.ok) throw new Error(await r.text()); return r.json(); }
+    async function jdel(url){ const r = await fetch(url,{method:'DELETE'}); if(!r.ok) throw new Error(await r.text()); return r.json(); }
 
-  <!-- Commands (audit) -->
-  <div id="page-cmd" class="page" style="display:none">
-    <div class="header"><h2>Audit (panel commands)</h2></div>
-    <div class="card"><pre id="audit" class="small">—</pre></div>
-  </div>
-</div>
+    // -------------- tabs
+    const tabBtns = $$('.nav button');
+    tabBtns.forEach(btn=>btn.addEventListener('click',()=>{
+      tabBtns.forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active');
+      const t = btn.dataset.tab;
+      $$('#tab-status,#tab-online,#tab-players,#tab-bans,#tab-schedules,#tab-audit').forEach(x=>x.hidden = true);
+      $('#tab-'+t).hidden = false;
+      // lazy load
+      if (t==='online'){ loadOnline(true); }
+      if (t==='players'){ loadPlayers(); }
+      if (t==='bans'){ loadBans(); }
+      if (t==='schedules'){ loadSchedules(); }
+      if (t==='audit'){ loadAudit(); }
+    }));
 
-<div id="modal" class="modal"><div class="win"><div id="modal-body"></div><div style="text-align:right;margin-top:8px"><button id="modal-close" class="btn ghost">Close</button></div></div></div>
-<div id="toast" class="toast"></div>
+    // -------------- status + quick list
+    async function loadStatus(){
+      try{
+        const s = await jget('/api/status');
+        $('#statusChip').innerHTML = 'Status: <span class="tag">online</span>';
+        $('#nextRestart').textContent = s.next_restart_iso ? fmtDate(s.next_restart_iso) : '—';
+        $('#nextRestart2').textContent = $('#nextRestart').textContent;
+        $('#nextRestartIn').textContent = s.next_restart_seconds!=null ? (Math.floor(s.next_restart_seconds/60)+' min') : '—';
+        $('#statusBox').innerHTML = `
+          <div class="row">
+            <div><span class="tag">Panel OK</span></div>
+            <div><span class="tag">Auth: Basic</span></div>
+          </div>
+          <div class="small muted" style="margin-top:8px">Live log tracking enabled.</div>`;
+      }catch(e){
+        $('#statusChip').innerHTML = 'Status: <span class="tag">error</span>';
+        $('#statusBox').innerHTML = '<div class="empty">Could not load /api/status</div>';
+      }
+    }
+    async function runList(){
+      $('#cmdOut').textContent = 'Running…';
+      try{
+        const out = await jpost('/api/command',{command: $('#cmdInput').value.trim() || 'list'});
+        $('#cmdOut').textContent = out.out || JSON.stringify(out,null,2);
+      }catch(e){
+        $('#cmdOut').textContent = e.message || 'Error';
+      }
+    }
+    $('#sendCmd').addEventListener('click', runList);
 
-<script>
-const pages=['dash','players','bans','rest','cmd'];
-document.querySelectorAll('.nav a').forEach(a=>{a.onclick=(e)=>{e.preventDefault();pages.forEach(p=>document.getElementById('page-'+p).style.display='none');document.querySelectorAll('.nav a').forEach(x=>x.classList.remove('active'));a.classList.add('active');document.getElementById('page-'+a.dataset.page).style.display='block';};});
-function showModal(html){const m=document.getElementById('modal');document.getElementById('modal-body').innerHTML=html;m.style.display='flex';}
-document.getElementById('modal-close').onclick=()=>{document.getElementById('modal').style.display='none';};
-function toast(t){const el=document.getElementById('toast');el.textContent=t;el.style.display='block';setTimeout(()=>el.style.display='none',1600);}
-async function api(p,o){const r=await fetch(p,{credentials:'include',headers:{'Content-Type':'application/json'},...o});if(!r.ok)throw new Error(await r.text());return r.json();}
-function fmtDur(s){s=Number(s||0);const d=Math.floor(s/86400);s%=86400;const h=Math.floor(s/3600);s%=3600;const m=Math.floor(s/60);return (d?d+'d ':'')+h+'h '+m+'m';}
-function relFromSeconds(s){if(s==null)return'';const m=Math.floor(s/60),sec=s%60;if(s>=3600){const h=Math.floor(m/60),rm=m%60;return`in ${h}h ${rm}m`;}if(s>=60)return`in ${m}m ${sec}s`;return`in ${sec}s`;}
+    // -------------- online
+    async function loadOnline(copyToStatus=false){
+      try{
+        const data = await jget('/api/online');
+        $('#onlineCount').textContent = data.count ?? 0;
+        const target1 = $('#onlineList'), target2 = $('#onlineList2');
+        const empty1 = $('#onlineEmpty'), empty2 = $('#onlineEmpty2');
+        const makeChip = (p)=>`<button class="btn" onclick="openPlayerByName('${p.username}')">${p.username}${p.uuid?` <span class='tag'>${p.uuid.slice(0,8)}</span>`:''}</button>`;
+        target1.innerHTML = data.players.map(makeChip).join('');
+        target2.innerHTML = data.players.map(makeChip).join('');
+        empty1.style.display = data.players.length? 'none':'block';
+        empty2.style.display = data.players.length? 'none':'block';
+        if(copyToStatus){
+          // also mirror to status tab
+          $('#onlineList').innerHTML = target1.innerHTML;
+          $('#onlineEmpty').style.display = empty1.style.display;
+        }
+      }catch(e){
+        $('#onlineCount').textContent = '—';
+      }
+    }
 
-document.getElementById('send').onclick=async()=>{const c=document.getElementById('cmd').value.trim()||'list';const out=await api('/api/command',{method:'POST',body:JSON.stringify({command:c})});document.getElementById('cout').textContent=out.out||JSON.stringify(out);refreshAudit().catch(()=>{});};
+    // -------------- players
+    let playersCache = [];
+    async function loadPlayers(){
+      const tbody = $('#playersTable tbody'); tbody.innerHTML = '<tr><td colspan="6" class="small">Loading…</td></tr>';
+      try{
+        const data = await jget('/api/players'); playersCache = data;
+        redrawPlayers();
+      }catch(e){
+        tbody.innerHTML = '<tr><td colspan="6" class="small">Failed to load players</td></tr>';
+      }
+    }
+    function redrawPlayers(){
+      const q = ($('#playerSearch').value||'').toLowerCase();
+      const rows = playersCache
+        .filter(p=>p.username.toLowerCase().includes(q))
+        .map(p=>`<tr onclick="openPlayer(${p.id})" style="cursor:pointer">
+          <td>${p.username}</td>
+          <td class="small">${p.uuid??'—'}</td>
+          <td class="small">${p.last_ip??'—'}</td>
+          <td class="small">${fmtDate(p.first_seen)}</td>
+          <td class="small">${fmtDate(p.last_seen)}</td>
+          <td>${fmtDur(p.total_playtime)}</td>
+        </tr>`);
+      $('#playersTable tbody').innerHTML = rows.join('') || `<tr><td colspan="6" class="small">No players</td></tr>`;
+      $('#playerCountChip').textContent = `${playersCache.length} players`;
+    }
+    $('#playerSearch').addEventListener('input', redrawPlayers);
 
-async function refreshStatus(){const st=await api('/api/status');document.getElementById('status').textContent=st.online?'Online':'Offline';document.getElementById('next').textContent=st.next_restart_iso?new Date(st.next_restart_iso).toLocaleString():'None';document.getElementById('nextRel').textContent=st.next_restart_seconds!=null?`(${relFromSeconds(st.next_restart_seconds)})`:'';}
-async function refreshOnline(){const on=await api('/api/online');document.getElementById('pcount').textContent=on.count;const lines=(on.players||[]).map(p=>`${p.username}${p.uuid?` (${p.uuid})`:''}`);document.getElementById('recent').textContent=lines.join('\n')||'—';}
-async function refreshPlayers(){const ps=await api('/api/players');const q=(document.getElementById('psearch').value||'').toLowerCase();const tb=document.querySelector('#ptbl tbody');tb.innerHTML=ps.filter(p=>!q||p.username.toLowerCase().includes(q)||(p.last_ip||'').includes(q)).map(p=>`<tr><td>${p.username}</td><td class="small">${p.uuid||''}</td><td>${p.last_ip||''}</td><td class="small">${p.first_seen||''}</td><td class="small">${p.last_seen||''}</td><td>${fmtDur(p.total_playtime||0)}</td><td><button class="v btn ghost" data-id="${p.id}">View</button></td></tr>`).join('');}
-document.getElementById('ptbl').onclick=async(e)=>{if(!e.target.classList.contains('v'))return;const id=e.target.dataset.id;const d=await api('/api/player/'+id);const p=d.player;const lines=[];lines.push(`<h3>${p.username} ${p.uuid?`<span class="tag">${p.uuid}</span>`:''}</h3>`);lines.push(`<div class="small">Latest IP: ${p.last_ip||'-'} · First: ${p.first_seen||'-'} · Last: ${p.last_seen||'-'} · Playtime: ${fmtDur(p.total_playtime||0)}</div>`);lines.push('<h4>IPs</h4><ul>'+d.ips.map(x=>`<li>${x.ip} <span class="small">${x.seen_at}</span></li>`).join('')+'</ul>');lines.push('<h4>Sessions</h4><ul>'+(d.sessions||[]).map(s=>`<li>${s.login_time} → ${s.logout_time||'(active)'} <span class="small">${s.duration?fmtDur(s.duration):''}</span></li>`).join('')+'</ul>');lines.push('<h4>Commands (panel)</h4><ul>'+(d.commands||[]).map(c=>`<li>${c.executed_at}: <code>${(c.command||'').replace(/</g,'&lt;')}</code></li>`).join('')+'</ul>');showModal(lines.join(''));};
+    // -------------- bans
+    async function loadBans(){
+      $('#banPlayers').innerHTML = '<div class="small muted">Loading…</div>';
+      $('#banIps').innerHTML = '<div class="small muted">Loading…</div>';
+      try{
+        const data = await jget('/api/bans');
+        // players
+        if(data.players && data.players.length){
+          $('#banPlayersEmpty').style.display = 'none';
+          $('#banPlayers').innerHTML = data.players.map(x=>{
+            return `<div class="ban-card">
+              <div class="head">
+                <div class="who">
+                  <span class="pill player">Player</span>
+                  <b>${x.username||x.target}</b>
+                </div>
+                ${x.uuid?`<span class="tag">${x.uuid.slice(0,8)}</span>`:''}
+              </div>
+              <div class="small"><b>By:</b> ${x.by||'Server'}</div>
+              <div class="small"><b>Reason:</b> ${x.reason||'—'}</div>
+              <div class="split small">
+                <span class="pill">Banned: ${fmtDate(x.banned_at)}</span>
+                ${x.last_ip?`<span class="pill">Last IP: ${x.last_ip}</span>`:''}
+                ${x.last_seen?`<span class="pill">Last Seen: ${fmtDate(x.last_seen)}</span>`:''}
+                ${x.playtime_seconds!=null?`<span class="pill">Playtime: ${fmtDur(x.playtime_seconds)}</span>`:''}
+              </div>
+            </div>`;
+          }).join('');
+        }else{
+          $('#banPlayers').innerHTML = '';
+          $('#banPlayersEmpty').style.display = 'block';
+        }
+        // IPs
+        if(data.ips && data.ips.length){
+          $('#banIpsEmpty').style.display = 'none';
+          $('#banIps').innerHTML = data.ips.map(x=>{
+            return `<div class="ban-card">
+              <div class="head">
+                <div class="who">
+                  <span class="pill ip">IP</span>
+                  <b>${x.target}</b>
+                </div>
+              </div>
+              <div class="small"><b>By:</b> ${x.by||'Server'}</div>
+              <div class="small"><b>Reason:</b> ${x.reason||'—'}</div>
+              <div class="split small">
+                <span class="pill">Banned: ${fmtDate(x.banned_at)}</span>
+              </div>
+            </div>`;
+          }).join('');
+        }else{
+          $('#banIps').innerHTML = '';
+          $('#banIpsEmpty').style.display = 'block';
+        }
+      }catch(e){
+        $('#banPlayers').innerHTML = '<div class="empty">Failed to load bans</div>';
+        $('#banIps').innerHTML = '';
+      }
+    }
 
-async function refreshBans(){
-  const data = await api('/api/bans');
-  const root = document.getElementById('bans-list');
-  const renderCard = (b) => {
-    const when = b.banned_at ? new Date(b.banned_at).toLocaleString() : 'unknown';
-    const title = b.type==='ip' ? b.target : (b.username || b.target);
-    const badge = b.type==='ip' ? 'IP ban' : 'Player ban';
-    const lastSeen = b.last_seen ? new Date(b.last_seen).toLocaleString() : '—';
-    const playDur = b.playtime_seconds!=null ? fmtDur(b.playtime_seconds) : '—';
-    const lastIp = b.last_ip || (b.type==='ip' ? b.target : '—');
-    const by = b.by || 'Server';
-    const reason = (b.reason || 'No reason provided').replace(/</g,'&lt;');
+    // -------------- schedules
+    async function loadSchedules(){
+      const tbody = $('#schedTable tbody'); tbody.innerHTML = '<tr><td colspan="5" class="small">Loading…</td></tr>';
+      try{
+        const rows = await jget('/api/schedules');
+        tbody.innerHTML = rows.map(r=>{
+          return `<tr>
+            <td>${r.id}</td>
+            <td>${r.label||'—'}</td>
+            <td><span class="tag">${r.cron}</span></td>
+            <td>${r.enabled?'<span class="tag">yes</span>':'<span class="tag">no</span>'}</td>
+            <td class="row">
+              <button class="btn" onclick="toggleSchedule(${r.id})">${r.enabled?'Disable':'Enable'}</button>
+              <button class="btn danger" onclick="deleteSchedule(${r.id})">Delete</button>
+            </td>
+          </tr>`;
+        }).join('') || '<tr><td colspan="5" class="small">No schedules</td></tr>';
+      }catch(e){
+        tbody.innerHTML = '<tr><td colspan="5" class="small">Failed to load schedules</td></tr>';
+      }
+    }
+    async function addSchedule(){
+      const cron = $('#cronExpr').value.trim(), label = $('#cronLabel').value.trim();
+      if(!cron){ toast('Enter a cron expression'); return; }
+      try{
+        await jpost('/api/schedules',{cron,label});
+        $('#cronExpr').value=''; $('#cronLabel').value='';
+        toast('Schedule added'); loadSchedules(); loadStatus();
+      }catch(e){
+        toast((e && e.message) || 'Error adding schedule');
+      }
+    }
+    async function toggleSchedule(id){
+      try{ await jpost(`/api/schedules/${id}/toggle`); toast('Updated'); loadSchedules(); loadStatus(); }catch(e){ toast('Failed'); }
+    }
+    async function deleteSchedule(id){
+      if(!confirm('Delete this schedule?')) return;
+      try{ await jdel(`/api/schedules/${id}`); toast('Deleted'); loadSchedules(); loadStatus(); }catch(e){ toast('Failed'); }
+    }
+    $('#addSchedule').addEventListener('click', addSchedule);
 
-    return `<div class="bubble">
-      <h4>${title} <span class="badge">${badge}</span></h4>
-      <div class="meta">Banned: <b>${when}</b> · By: <b>${by}</b></div>
-      <div class="kv">
-        <div>Last IP</div><div>${lastIp}</div>
-        ${b.uuid?`<div>UUID</div><div>${b.uuid}</div>`:''}
-        <div>Last Seen</div><div>${lastSeen}</div>
-        <div>Playtime</div><div>${playDur}</div>
-        <div>Reason</div><div class="reason">${reason}</div>
-      </div>
-    </div>`;
-  };
-  const players = (data.players||[]).map(renderCard).join('');
-  const ips = (data.ips||[]).map(renderCard).join('');
-  root.innerHTML = (players + ips) || '<div class="small">No active bans.</div>';
-}
+    // -------------- audit
+    async function loadAudit(){
+      const tbody = $('#auditTable tbody'); tbody.innerHTML = '<tr><td colspan="3" class="small">Loading…</td></tr>';
+      try{
+        const rows = await jget('/api/audit');
+        tbody.innerHTML = rows.map(a=>`<tr>
+          <td class="small">${fmtDate(a.created_at)}</td>
+          <td>${a.action}</td>
+          <td class="small"><code>${escapeHtml(JSON.stringify(a.payload))}</code></td>
+        </tr>`).join('') || '<tr><td colspan="3" class="small">No audit events</td></tr>';
+      }catch(e){
+        tbody.innerHTML = '<tr><td colspan="3" class="small">Failed to load audit</td></tr>';
+      }
+    }
 
-async function refreshSchedules(){const rows=await api('/api/schedules');const tb=document.querySelector('#stbl tbody');tb.innerHTML=rows.map(r=>`<tr><td>${r.id}</td><td>${r.cron}</td><td>${r.label||''}</td><td>${r.enabled?'yes':'no'}</td><td><button class="t btn ghost" data-id="${r.id}">Toggle</button> <button class="d btn ghost" data-id="${r.id}">Delete</button></td></tr>`).join('');}
-document.getElementById('stbl').onclick=async(e)=>{if(e.target.classList.contains('t')){await api('/api/schedules/'+e.target.dataset.id+'/toggle',{method:'POST'});refreshSchedules();}if(e.target.classList.contains('d')){await api('/api/schedules/'+e.target.dataset.id,{method:'DELETE'});refreshSchedules();}};
-document.getElementById('sadd').onclick=async()=>{const cron=document.getElementById('cron').value.trim();const label=document.getElementById('label').value.trim();if(!cron)return toast('Enter cron');await api('/api/schedules',{method:'POST',body:JSON.stringify({cron,label})}).then(()=>{document.getElementById('cron').value='';document.getElementById('label').value='';refreshSchedules();}).catch(e=>toast('Bad cron'));}
-document.getElementById('sref').onclick=refreshSchedules;
+    // -------------- player modal
+    function closePlayerModal(){ $('#playerModal').classList.remove('open'); }
+    async function openPlayer(id){
+      try{
+        const d = await jget('/api/player/'+id);
+        $('#pmTitle').textContent = d.player.username;
+        $('#pmUuid').textContent = d.player.uuid || '—';
+        $('#pmLastIp').textContent = d.player.last_ip || '—';
+        $('#pmFirst').textContent = fmtDate(d.player.first_seen);
+        $('#pmLast').textContent = fmtDate(d.player.last_seen);
+        $('#pmPlaytime').textContent = fmtDur(d.player.total_playtime);
 
-async function refreshAudit(){const rows=await api('/api/audit');document.getElementById('audit').textContent=JSON.stringify(rows,null,2);}
+        const sBody = d.sessions.map(s=>`<tr><td class="small">${fmtDate(s.login_time)}</td><td class="small">${fmtDate(s.logout_time)}</td><td>${fmtDur(s.duration)}</td></tr>`).join('');
+        $('#pmSessions tbody').innerHTML = sBody || '<tr><td colspan="3" class="small">No sessions</td></tr>';
 
-async function tick(){try{await refreshStatus();}catch{}try{await refreshOnline();}catch{}try{await refreshPlayers();}catch{}}
-setInterval(tick,2000); tick();
-refreshBans().catch(()=>{});refreshSchedules().catch(()=>{});refreshAudit().catch(()=>{});
-</script>
+        const cBody = d.commands.map(c=>`<tr><td class="small">${fmtDate(c.executed_at)}</td><td class="small"><code>${escapeHtml(c.command)}</code></td></tr>`).join('');
+        $('#pmCommands tbody').innerHTML = cBody || '<tr><td colspan="2" class="small">No commands</td></tr>';
+
+        const iBody = d.ips.map(i=>`<tr><td>${i.ip}</td><td class="small">${fmtDate(i.seen_at)}</td></tr>`).join('');
+        $('#pmIps tbody').innerHTML = iBody || '<tr><td colspan="2" class="small">No IPs</td></tr>';
+
+        $('#playerModal').classList.add('open');
+      }catch(e){
+        toast('Failed to load player');
+      }
+    }
+    function openPlayerByName(name){
+      // find in cache (online or players)
+      const p = playersCache.find(x=>x.username===name);
+      if(p) return openPlayer(p.id);
+      // fallback: ensure players loaded then retry
+      loadPlayers().then(()=>{
+        const p2 = playersCache.find(x=>x.username===name);
+        if(p2) openPlayer(p2.id);
+      });
+    }
+    $('#playerModal').addEventListener('click', (e)=>{ if(e.target.id==='playerModal') closePlayerModal(); });
+
+    function escapeHtml(s){ return (s||'').replace(/[&<>"]/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+    // -------------- refresh & boot
+    $('#refreshBtn').addEventListener('click', ()=>{
+      const cur = $('.nav button.active')?.dataset.tab || 'status';
+      if (cur==='status'){ loadStatus(); loadOnline(true); }
+      if (cur==='online'){ loadOnline(); }
+      if (cur==='players'){ loadPlayers(); }
+      if (cur==='bans'){ loadBans(); }
+      if (cur==='schedules'){ loadSchedules(); loadStatus(); }
+      if (cur==='audit'){ loadAudit(); }
+    });
+
+    (async function boot(){
+      await loadStatus();
+      await loadOnline(true);
+      // default visible tab is "status"; others lazy-load
+      // background refresh every 20s for online + status
+      setInterval(()=>{ loadOnline($('.nav button.active')?.dataset.tab==='status'); loadStatus(); }, 20000);
+    })();
+  </script>
 </body>
 </html>
