@@ -1,82 +1,152 @@
-// server.js - Express API + scheduler + importer + UI
-const express = require('express');
-const basicAuth = require('express-basic-auth');
+// server.js — Minecraft RCON Panel (clean bans + schedules + players + cmds)
+//
+// Requires: express, basic-auth, rcon-client, sqlite3, cron-parser
+// Optional: node-cron (for actual timed restarts if you enabled it earlier)
+//
+// ENV (.env in app/):
+// HOST=0.0.0.0
+// PORT=8080
+// PANEL_USER=admin
+// PANEL_PASS=changeme
+// RCON_HOST=127.0.0.1
+// RCON_PORT=25575
+// RCON_PASSWORD=12KaliRoot12
+// MC_ROOT=/root/mc-server-backup
+// LOG_PATH=/root/mc-server-backup/logs/latest.log
+//
 const path = require('path');
 const fs = require('fs');
-const readline = require('readline');
-const cron = require('node-cron');
+const express = require('express');
+const basicAuth = require('basic-auth');
+const { Rcon } = require('rcon-client');
+const sqlite3 = require('sqlite3').verbose();
 const cronParser = require('cron-parser');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 
-const { run, get, all, initSchema } = require('./db');
-const { sendRconCommand } = require('./rcon');
+/* =========================
+ * Config / Constants
+ * ========================= */
+const HOST = process.env.HOST || '0.0.0.0';
+const PORT = Number(process.env.PORT || 8080);
+
+const PANEL_USER = process.env.PANEL_USER || 'admin';
+const PANEL_PASS = process.env.PANEL_PASS || 'changeme';
+
+const RCON_HOST = process.env.RCON_HOST || '127.0.0.1';
+const RCON_PORT = Number(process.env.RCON_PORT || 25575);
+const RCON_PASSWORD = process.env.RCON_PASSWORD || '';
+
+const DB_FILE = path.join(__dirname, 'webgui.sqlite');
 
 const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ---- Auth (HTTP Basic) ----
-const PANEL_USER = process.env.PANEL_USER || 'admin';
-const PANEL_PASS = process.env.PANEL_PASS || 'changeme';
-const auth = basicAuth({ users: { [PANEL_USER]: PANEL_PASS }, challenge: true });
-
-// ---- Utility helpers ----
-const nowISO = () => new Date().toISOString();
-
-async function upsertPlayer({ username, uuid = null, ip = null, seenAt = null }) {
-  const first = seenAt || nowISO();
-  const last = seenAt || nowISO();
-  await run(
-    `INSERT INTO players (username, uuid, first_seen, last_seen, last_ip)
-     VALUES (?, ?, ?, ?, ?)
-     ON CONFLICT(username) DO UPDATE SET
-       uuid = COALESCE(excluded.uuid, players.uuid),
-       last_seen = excluded.last_seen,
-       last_ip = COALESCE(excluded.last_ip, players.last_ip)`,
-    [username, uuid, first, last, ip]
-  );
-  const row = await get(`SELECT id FROM players WHERE username=?`, [username]);
-  if (ip) await run(`INSERT INTO player_ips (player_id, ip, seen_at) VALUES (?,?,?)`, [row.id, ip, last]).catch(() => {});
-  return row.id;
-}
-
-async function openSession(playerId, loginISO) {
-  const open = await get(`SELECT id FROM sessions WHERE player_id=? AND logout_time IS NULL`, [playerId]);
-  if (!open) await run(`INSERT INTO sessions (player_id, login_time) VALUES (?,?)`, [playerId, loginISO]);
-}
-
-async function closeSession(playerId, logoutISO) {
-  const s = await get(`SELECT id, login_time FROM sessions WHERE player_id=? AND logout_time IS NULL ORDER BY id DESC LIMIT 1`, [playerId]);
-  if (s) {
-    const dur = Math.max(0, Math.floor((Date.parse(logoutISO) - Date.parse(s.login_time)) / 1000));
-    await run(`UPDATE sessions SET logout_time=?, duration=? WHERE id=?`, [logoutISO, dur, s.id]);
-    await run(`UPDATE players SET total_playtime = COALESCE(total_playtime,0) + ? WHERE id=?`, [dur, playerId]);
+/* =========================
+ * Auth (HTTP Basic)
+ * ========================= */
+function requireAuth(req, res, next) {
+  const creds = basicAuth(req);
+  if (!creds || creds.name !== PANEL_USER || creds.pass !== PANEL_PASS) {
+    res.set('WWW-Authenticate', 'Basic realm="MC Panel"');
+    return res.status(401).send('Authentication required.');
   }
+  next();
 }
 
-async function recordCommand(username, command, tsISO) {
-  const p = await get(`SELECT id FROM players WHERE username=?`, [username]);
-  if (!p) return;
-  await run(`INSERT INTO commands (player_id, command, executed_at) VALUES (?,?,?)`, [p.id, command, tsISO]);
+/* =========================
+ * DB Init
+ * ========================= */
+const db = new sqlite3.Database(DB_FILE);
+db.serialize(() => {
+  db.run(`PRAGMA journal_mode=WAL`);
+  db.run(`CREATE TABLE IF NOT EXISTS players(
+    id INTEGER PRIMARY KEY,
+    username TEXT UNIQUE,
+    uuid TEXT,
+    first_seen DATETIME,
+    last_seen DATETIME,
+    last_ip TEXT,
+    total_playtime INTEGER DEFAULT 0
+  )`);
+  db.run(`CREATE TABLE IF NOT EXISTS player_ips(
+    id INTEGER PRIMARY KEY,
+    player_id INTEGER NOT NULL,
+    ip TEXT NOT NULL,
+    seen_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(player_id, ip, date(seen_at)),
+    FOREIGN KEY(player_id) REFERENCES players(id) ON DELETE CASCADE
+  )`);
+  db.run(`CREATE TABLE IF NOT EXISTS sessions(
+    id INTEGER PRIMARY KEY,
+    player_id INTEGER NOT NULL,
+    login_time DATETIME NOT NULL,
+    logout_time DATETIME,
+    duration INTEGER, -- seconds
+    FOREIGN KEY(player_id) REFERENCES players(id) ON DELETE CASCADE
+  )`);
+  db.run(`CREATE TABLE IF NOT EXISTS commands(
+    id INTEGER PRIMARY KEY,
+    player_id INTEGER,
+    username TEXT,
+    command TEXT,
+    executed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(player_id) REFERENCES players(id) ON DELETE SET NULL
+  )`);
+  db.run(`CREATE TABLE IF NOT EXISTS schedules(
+    id INTEGER PRIMARY KEY,
+    cron TEXT NOT NULL,
+    label TEXT,
+    enabled INTEGER DEFAULT 1
+  )`);
+  // helpful indexes
+  db.run(`CREATE UNIQUE INDEX IF NOT EXISTS ux_players_username ON players(username)`);
+  db.run(`CREATE INDEX IF NOT EXISTS ix_player_ips_player ON player_ips(player_id, ip)`);
+  db.run(`CREATE INDEX IF NOT EXISTS ix_sessions_open ON sessions(player_id, logout_time)`);
+});
+
+/* =========================
+ * RCON helpers
+ * ========================= */
+async function withRcon(fn) {
+  const r = await Rcon.connect({
+    host: RCON_HOST,
+    port: RCON_PORT,
+    password: RCON_PASSWORD
+  });
+  try { return await fn(r); }
+  finally { r.end(); }
 }
 
-// ---- Online list via RCON ----
+async function sendRconCommand(command) {
+  return withRcon(r => r.send(command));
+}
+
 async function listOnline() {
   try {
-    const out = await sendRconCommand('list uuids'); // "There are X of a max ...: name (uuid), ..."
-    const idx = out.indexOf(':');
-    const names = idx > -1 ? out.slice(idx + 1).trim() : '';
-    const arr = names ? names.split(',').map(s => s.trim()).filter(Boolean) : [];
-    return arr.map(p => {
-      const m = /(.*) \((.*)\)/.exec(p);
-      return { username: m ? m[1] : p, uuid: m ? m[2] : null };
-    });
+    const res = await sendRconCommand('list uuids');
+    // Example: "There are 2 of a max of 20 players online: Name1 (uuid), Name2 (uuid)"
+    const colon = res.indexOf(':');
+    const part = colon >= 0 ? res.slice(colon + 1).trim() : '';
+    if (!part) return [];
+    return part.split(',').map(s => {
+      const t = s.trim();
+      const m = /(.*) \((.*)\)/.exec(t);
+      return { username: m ? m[1] : t, uuid: m ? m[2] : null };
+    }).filter(Boolean);
   } catch {
     return [];
   }
 }
 
-// ---- Status: compute earliest next restart ----
+/* =========================
+ * Status: compute next restart
+ * ========================= */
+function all(sql, params = []) {
+  return new Promise((resolve, reject) => {
+    db.all(sql, params, (err, rows) => err ? reject(err) : resolve(rows));
+  });
+}
 async function computeNextRun() {
   const rows = await all(`SELECT cron FROM schedules WHERE enabled=1`);
   if (!rows.length) return { iso: null, seconds: null };
@@ -87,29 +157,64 @@ async function computeNextRun() {
       const it = cronParser.parseExpression(r.cron, { currentDate: now });
       const next = it.next().toDate();
       if (!soonest || next < soonest) soonest = next;
-    } catch {}
+    } catch (e) {
+      // invalid cron; skip
+    }
   }
-  return soonest ? { iso: soonest.toISOString(), seconds: Math.max(0, Math.floor((soonest - now) / 1000)) } : { iso: null, seconds: null };
+  return soonest
+    ? { iso: soonest.toISOString(), seconds: Math.max(0, Math.floor((soonest - now) / 1000)) }
+    : { iso: null, seconds: null };
 }
 
-// ---- Public status card ----
+/* =========================
+ * Clean Bans Parsing
+ * ========================= */
+function parseBanLines(text) {
+  if (!text || typeof text !== 'string') return [];
+  return text
+    .split('\n')
+    .map(s => s.trim())
+    .filter(s => s && !/^There are \d+ ban\(s\):/i.test(s))
+    .map(line => {
+      // "<target> was banned by <by>: <reason>"
+      const m = /^(.+?) was banned by (.+?)(?::\s*(.*))?$/.exec(line);
+      if (!m) return { raw: line };
+      const [, target, by, reason] = m;
+      return { target, by, reason: reason || '' };
+    });
+}
+
+/* =========================
+ * API Routes
+ * ========================= */
+
+// public status (no auth)
 app.get('/api/status', async (_req, res) => {
   try {
     const players = await listOnline();
     const next = await computeNextRun();
-    res.json({ online: true, player_count: players.length, next_restart_iso: next.iso, next_restart_seconds: next.seconds });
+    res.json({
+      online: true,
+      player_count: players.length,
+      next_restart_iso: next.iso,
+      next_restart_seconds: next.seconds
+    });
   } catch {
     res.json({ online: false, player_count: 0, next_restart_iso: null, next_restart_seconds: null });
   }
 });
 
-// ---- Admin APIs ----
-app.get('/api/online', auth, async (_req, res) => {
+// everything else behind Basic auth
+app.use(requireAuth);
+
+// online list
+app.get('/api/online', async (req, res) => {
   const players = await listOnline();
   res.json({ players, count: players.length });
 });
 
-app.post('/api/command', auth, async (req, res) => {
+// run arbitrary command
+app.post('/api/command', async (req, res) => {
   const { command } = req.body || {};
   if (!command) return res.status(400).json({ error: 'command required' });
   try {
@@ -120,135 +225,66 @@ app.post('/api/command', auth, async (req, res) => {
   }
 });
 
-app.post('/api/broadcast', auth, async (req, res) => {
-  const { message } = req.body || {};
-  if (!message) return res.status(400).json({ error: 'message required' });
-  try {
-    const out = await sendRconCommand(`broadcast ${message}`);
-    res.json({ ok: true, out });
-  } catch (e) {
-    res.status(500).json({ error: String(e.message || e) });
-  }
-});
-
-app.get('/api/bans', auth, async (_req, res) => {
-  try {
-    const players = await sendRconCommand('banlist');
-    const ips = await sendRconCommand('banlist ips');
-    res.json({ players, ips });
-  } catch (e) {
-    res.status(500).json({ error: String(e.message || e) });
-  }
-});
-
-app.get('/api/ban-presets', auth, async (_req, res) => {
-  const rows = await all(`SELECT id,label,reason FROM ban_presets ORDER BY label`);
-  res.json(rows);
-});
-app.post('/api/ban-presets', auth, async (req, res) => {
-  const { label, reason } = req.body || {};
-  if (!label || !reason) return res.status(400).json({ error: 'label/reason required' });
-  await run(`INSERT OR REPLACE INTO ban_presets(label,reason) VALUES(?,?)`, [label, reason]);
-  res.json({ ok: true });
-});
-app.post('/api/ban-ip', auth, async (req, res) => {
+// IP ban
+app.post('/api/ban-ip', async (req, res) => {
   const { ip, reason } = req.body || {};
   if (!ip) return res.status(400).json({ error: 'ip required' });
   try {
-    const out = await sendRconCommand(`ban-ip ${ip} ${reason ? `"${reason}"` : ''}`.trim());
+    const out = await sendRconCommand(`ban-ip ${ip}${reason ? ' "' + reason.replace(/"/g, '\\"') + '"' : ''}`);
     res.json({ ok: true, out });
   } catch (e) {
     res.status(500).json({ error: String(e.message || e) });
   }
 });
 
-// Broadcast presets
-app.get('/api/broadcast-presets', auth, async (_req, res) => {
-  const rows = await all(`SELECT id,label,message FROM broadcast_presets ORDER BY label`);
-  res.json(rows);
-});
-app.post('/api/broadcast-presets', auth, async (req, res) => {
-  const { label, message } = req.body || {};
-  if (!label || !message) return res.status(400).json({ error: 'label/message required' });
-  await run(`INSERT OR REPLACE INTO broadcast_presets(label,message) VALUES(?,?)`, [label, message]);
-  res.json({ ok: true });
-});
-
-// Players
-app.get('/api/players', auth, async (_req, res) => {
-  const rows = await all(`SELECT * FROM players ORDER BY last_seen DESC`);
-  res.json(rows);
-});
-app.get('/api/player/:id', auth, async (req, res) => {
-  const id = req.params.id;
-  const p = await get(`SELECT * FROM players WHERE id=?`, [id]);
-  if (!p) return res.status(404).json({ error: 'not found' });
-  const ips = await all(`SELECT ip, seen_at FROM player_ips WHERE player_id=? ORDER BY seen_at DESC`, [id]);
-  const sessions = await all(`SELECT login_time, logout_time, duration FROM sessions WHERE player_id=? ORDER BY id DESC LIMIT 300`, [id]);
-  const commands = await all(`SELECT command, executed_at FROM commands WHERE player_id=? ORDER BY id DESC LIMIT 300`, [id]);
-  res.json({ player: p, ips, sessions, commands });
-});
-
-// Schedules
-const jobs = new Map();
-function clearJobs() { for (const [, j] of jobs) j.stop(); jobs.clear(); }
-
-function scheduleWithWarnings(cronExpr) {
-  return cron.schedule(cronExpr, async () => {
-    try {
-      await sendRconCommand('broadcast Server restarting in 10 minutes!');
-      await new Promise(r => setTimeout(r, 5 * 60 * 1000));
-      await sendRconCommand('broadcast Server restarting in 5 minutes!');
-      await new Promise(r => setTimeout(r, 4 * 60 * 1000));
-      await sendRconCommand('broadcast Server restarting in 1 minute!');
-      await new Promise(r => setTimeout(r, 30 * 1000));
-      await sendRconCommand('broadcast Server restarting in 30 seconds!');
-      await new Promise(r => setTimeout(r, 25 * 1000));
-      await sendRconCommand('broadcast Server restarting in 5 seconds!');
-      await new Promise(r => setTimeout(r, 5 * 1000));
-      await sendRconCommand('stop');
-    } catch (e) {
-      console.error('Scheduled restart error:', e.message || e);
-    }
-  });
-}
-
-async function loadSchedules() {
-  clearJobs();
-  const rows = await all(`SELECT * FROM schedules WHERE enabled=1`);
-  for (const s of rows) {
-    try {
-      const job = scheduleWithWarnings(s.cron);
-      jobs.set(s.id, job);
-    } catch (e) {
-      console.error('Invalid cron', s.cron, e.message || e);
-    }
+// CLEAN BANS (players + ips)
+app.get('/api/bans', async (_req, res) => {
+  try {
+    const playersRaw = await sendRconCommand('banlist');     // players
+    const ipsRaw     = await sendRconCommand('banlist ips'); // ips
+    res.json({
+      players: parseBanLines(playersRaw),
+      ips: parseBanLines(ipsRaw)
+    });
+  } catch (e) {
+    res.status(500).json({ error: String(e.message || e) });
   }
-}
-
-app.get('/api/schedules', auth, async (_req, res) => {
-  res.json(await all(`SELECT * FROM schedules ORDER BY id`));
-});
-app.post('/api/schedules', auth, async (req, res) => {
-  const { cron: cronExpr, label, enabled = 1 } = req.body || {};
-  if (!cronExpr) return res.status(400).json({ error: 'cron required' });
-  await run(`INSERT INTO schedules (cron,label,enabled) VALUES (?,?,?)`, [cronExpr, label || null, enabled ? 1 : 0]);
-  await loadSchedules();
-  res.json({ ok: true });
-});
-app.post('/api/schedules/:id/toggle', auth, async (req, res) => {
-  await run(`UPDATE schedules SET enabled = CASE enabled WHEN 1 THEN 0 ELSE 1 END WHERE id=?`, [req.params.id]);
-  await loadSchedules();
-  res.json({ ok: true });
-});
-app.delete('/api/schedules/:id', auth, async (req, res) => {
-  await run(`DELETE FROM schedules WHERE id=?`, [req.params.id]);
-  await loadSchedules();
-  res.json({ ok: true });
 });
 
-// Emergency restart
-app.post('/api/restart-now', auth, async (_req, res) => {
+// schedules
+app.get('/api/schedules', (_req, res) => {
+  db.all('SELECT * FROM schedules ORDER BY id', (err, rows) => {
+    if (err) return res.status(500).json({ error: String(err) });
+    res.json(rows);
+  });
+});
+app.post('/api/schedules', (req, res) => {
+  const { cron, label, enabled = 1 } = req.body || {};
+  if (!cron) return res.status(400).json({ error: 'cron required' });
+  db.run('INSERT INTO schedules(cron,label,enabled) VALUES(?,?,?)',
+    [cron, label || null, enabled ? 1 : 0],
+    function (err) {
+      if (err) return res.status(500).json({ error: String(err) });
+      res.json({ ok: true, id: this.lastID });
+    });
+});
+app.post('/api/schedules/:id/toggle', (req, res) => {
+  db.run('UPDATE schedules SET enabled = CASE enabled WHEN 1 THEN 0 ELSE 1 END WHERE id=?',
+    [req.params.id],
+    function (err) {
+      if (err) return res.status(500).json({ error: String(err) });
+      res.json({ ok: true });
+    });
+});
+app.delete('/api/schedules/:id', (req, res) => {
+  db.run('DELETE FROM schedules WHERE id=?', [req.params.id], function (err) {
+    if (err) return res.status(500).json({ error: String(err) });
+    res.json({ ok: true });
+  });
+});
+
+// emergency restart now (broadcast + stop)
+app.post('/api/restart-now', async (_req, res) => {
   try {
     await sendRconCommand('broadcast ⚠ Emergency restart now!');
     await sendRconCommand('stop');
@@ -258,91 +294,48 @@ app.post('/api/restart-now', auth, async (_req, res) => {
   }
 });
 
-// ---- Log importer & live tail (IPs, sessions, commands) ----
-const LOG_PATH = process.env.LOG_PATH || path.join(process.env.MC_ROOT || '/root/mc-server-backup', 'logs/latest.log');
+/* =========================
+ * Players: lightweight endpoints (on-demand)
+ * ========================= */
 
-function parseLine(line) {
-  // timestamp ends with "] " — keep whole line safer
-  // Login with IP: "username[/1.2.3.4:xxxxx] logged in with entity id ..."
-  let m = line.match(/\b([A-Za-z0-9_]{3,16})\s*\[\/([0-9a-fA-F\.:]+):\d+\]\s+logged in\b/);
-  if (m) return { type: 'login', username: m[1], ip: m[2] };
-
-  // UUID line: "UUID of player Name is 1234-..."
-  m = line.match(/UUID of player\s+([A-Za-z0-9_]{3,16})\s+is\s+([0-9a-fA-F-]{8,})/i);
-  if (m) return { type: 'uuid', username: m[1], uuid: m[2] };
-
-  // Left / lost connection
-  m = line.match(/\b([A-Za-z0-9_]{3,16})\b\s+(left the game|lost connection)/i);
-  if (m) return { type: 'logout', username: m[1] };
-
-  // Command: "Name issued server command: /something"
-  m = line.match(/\b([A-Za-z0-9_]{3,16})\b\s+issued server command:\s+(.*)$/i);
-  if (m) return { type: 'command', username: m[1], command: m[2] };
-
-  return null;
-}
-
-async function applyEvent(ev, tsISO) {
-  if (ev.type === 'login') {
-    const id = await upsertPlayer({ username: ev.username, ip: ev.ip, seenAt: tsISO });
-    await openSession(id, tsISO);
-  } else if (ev.type === 'uuid') {
-    await upsertPlayer({ username: ev.username, uuid: ev.uuid, seenAt: tsISO });
-  } else if (ev.type === 'logout') {
-    const p = await get(`SELECT id FROM players WHERE username=?`, [ev.username]);
-    if (p) await closeSession(p.id, tsISO);
-  } else if (ev.type === 'command') {
-    await recordCommand(ev.username, ev.command, tsISO);
-  }
-}
-
-async function importLogsFull() {
-  try {
-    if (!fs.existsSync(LOG_PATH)) return;
-    const rl = readline.createInterface({ input: fs.createReadStream(LOG_PATH, { encoding: 'utf8' }) });
-    for await (const line of rl) {
-      const ev = parseLine(line);
-      if (!ev) continue;
-      // try to parse timestamp like "2023-08-10 12:34:56" if present
-      const tsMatch = line.match(/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})/);
-      const tsISO = tsMatch ? new Date(tsMatch[1].replace(' ', 'T') + 'Z').toISOString() : nowISO();
-      await applyEvent(ev, tsISO);
-    }
-  } catch (e) {
-    console.error('importLogsFull error:', e.message || e);
-  }
-}
-
-function tailLogs() {
-  if (!fs.existsSync(LOG_PATH)) return;
-  let lastSize = fs.statSync(LOG_PATH).size;
-  fs.watchFile(LOG_PATH, { interval: 1000 }, async (cur, prev) => {
-    if (cur.size <= lastSize) { lastSize = cur.size; return; }
-    const stream = fs.createReadStream(LOG_PATH, { start: lastSize, end: cur.size, encoding: 'utf8' });
-    const rl = readline.createInterface({ input: stream });
-    for await (const chunk of rl) {
-      const line = String(chunk);
-      const ev = parseLine(line);
-      if (!ev) continue;
-      const tsMatch = line.match(/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})/);
-      const tsISO = tsMatch ? new Date(tsMatch[1].replace(' ', 'T') + 'Z').toISOString() : nowISO();
-      await applyEvent(ev, tsISO);
-    }
-    lastSize = cur.size;
+// list players (basic columns)
+app.get('/api/players', (_req, res) => {
+  db.all(`SELECT id, username, uuid, last_ip, first_seen, last_seen, total_playtime FROM players ORDER BY last_seen DESC NULLS LAST, username`, (err, rows) => {
+    if (err) return res.status(500).json({ error: String(err) });
+    res.json(rows || []);
   });
-}
+});
 
-// ---- UI ----
-app.get('*', (_req, res) => res.sendFile(path.join(__dirname, 'public/index.html')));
+// details for a player
+app.get('/api/player/:id', (req, res) => {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ error: 'bad id' });
+  db.get(`SELECT id, username, uuid, last_ip, first_seen, last_seen, total_playtime FROM players WHERE id=?`, [id], (err, player) => {
+    if (err) return res.status(500).json({ error: String(err) });
+    if (!player) return res.status(404).json({ error: 'not found' });
+    db.all(`SELECT ip, seen_at FROM player_ips WHERE player_id=? ORDER BY seen_at DESC`, [id], (e2, ips) => {
+      if (e2) return res.status(500).json({ error: String(e2) });
+      db.all(`SELECT login_time, logout_time, duration FROM sessions WHERE player_id=? ORDER BY login_time DESC LIMIT 200`, [id], (e3, sessions) => {
+        if (e3) return res.status(500).json({ error: String(e3) });
+        db.all(`SELECT command, executed_at FROM commands WHERE player_id=? ORDER BY executed_at DESC LIMIT 200`, [id], (e4, commands) => {
+          if (e4) return res.status(500).json({ error: String(e4) });
+          res.json({ player, ips, sessions, commands });
+        });
+      });
+    });
+  });
+});
 
-// ---- Boot ----
-(async () => {
-  await initSchema();
-  // initial import (non-blocking) + start tailer
-  importLogsFull().then(() => tailLogs());
-  await loadSchedules();
+/* =========================
+ * Frontend (single file)
+ * ========================= */
+app.get('*', (_req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
 
-  const PORT = Number(process.env.PORT || 8080);
-  const HOST = process.env.HOST || '0.0.0.0';
-  app.listen(PORT, HOST, () => console.log(`Panel on http://${HOST}:${PORT}`));
-})();
+/* =========================
+ * Start
+ * ========================= */
+app.listen(PORT, HOST, () => {
+  console.log(`Panel on http://${HOST}:${PORT}`);
+});
