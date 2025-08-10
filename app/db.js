@@ -78,6 +78,14 @@ async function initSchema() {
     )`);
 
   await run(`
+    CREATE TABLE IF NOT EXISTS panel_audit(
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      action TEXT NOT NULL,
+      payload TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`);
+
+  await run(`
     CREATE TABLE IF NOT EXISTS ban_presets (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       label TEXT UNIQUE,
@@ -89,14 +97,6 @@ async function initSchema() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       label TEXT UNIQUE,
       message TEXT NOT NULL
-    )`);
-
-  await run(`
-    CREATE TABLE IF NOT EXISTS panel_audit(
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      action TEXT NOT NULL,
-      payload TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`);
 }
 
