@@ -1,12 +1,12 @@
 // app/server.js
-// Minimal, robust API + UI server for MC RCON Panel
+// Minimal, robust API + UI server for MC RCON Panel (modern-rcon edition)
 
-require('dotenv').config(); // optional, safe if no .env present
+require('dotenv').config(); // safe if no .env present
 const path = require('path');
 const fs = require('fs');
 const express = require('express');
 const basicAuth = require('basic-auth');
-const { Rcon } = require('rcon-client'); // npm i rcon-client@5.1.0 (or 5.2.x if available)
+const ModernRcon = require('modern-rcon'); // npm i modern-rcon@3
 
 const app = express();
 
@@ -18,10 +18,14 @@ const RCON_HOST = process.env.RCON_HOST || '127.0.0.1';
 const RCON_PORT = Number(process.env.RCON_PORT || 25575);
 const RCON_PASS = process.env.RCON_PASS || '';
 const RCON_TIMEOUT_MS = Number(process.env.RCON_TIMEOUT_MS || 3000);
-const RCON_KEEP_MS = Number(process.env.RCON_KEEP_MS || 5000); // how long to keep the connection alive
+const RCON_KEEP_MS = Number(process.env.RCON_KEEP_MS || 5000); // keep the socket alive for a few seconds
 
-const PORT = Number(process.env.PORT || 8080);
 const HOST = process.env.HOST || '0.0.0.0';
+const PORT = Number(process.env.PORT || 8080);
+
+// UI folder (serve /app/public/index.html)
+const PUBLIC_DIR = path.join(__dirname, 'public');
+const INDEX_HTML = path.join(PUBLIC_DIR, 'index.html');
 
 app.use(express.json());
 
@@ -35,58 +39,58 @@ function requireAuth(req, res, next) {
   next();
 }
 
-// ---------- RCON: tiny connection pool ----------
-let rconConn = null;
+// ---------- RCON small pool / keepalive ----------
+let rcon = null;          // ModernRcon instance
+let rconConnected = false;
 let rconBusy = false;
 let rconLastUse = 0;
+let rconKillTimer = null;
 
-async function getRcon() {
+async function ensureRcon() {
   const now = Date.now();
+  if (rcon && rconConnected && (now - rconLastUse < RCON_KEEP_MS)) return rcon;
 
-  // Reuse if we have a connection and it's "fresh"
-  if (rconConn && (now - rconLastUse < RCON_KEEP_MS)) return rconConn;
-
-  // Otherwise, (re)connect
   await closeRconSafe();
 
-  const conn = new Rcon({
-    host: RCON_HOST,
-    port: RCON_PORT,
-    password: RCON_PASS
-  });
-
-  await conn.connect();
-  rconConn = conn;
+  rcon = new ModernRcon(RCON_HOST, RCON_PORT, RCON_PASS, { timeout: RCON_TIMEOUT_MS });
+  await rcon.connect();
+  rconConnected = true;
   rconLastUse = now;
 
-  // On error, drop it
-  conn.on('end', () => { rconConn = null; });
-  conn.on('error', () => { rconConn = null; });
+  // schedule auto-close after idle
+  scheduleRconClose();
+  return rcon;
+}
 
-  return rconConn;
+function scheduleRconClose() {
+  if (rconKillTimer) clearTimeout(rconKillTimer);
+  rconKillTimer = setTimeout(() => { closeRconSafe().catch(()=>{}); }, RCON_KEEP_MS + 500);
 }
 
 async function closeRconSafe() {
-  if (rconConn) {
-    try { await rconConn.end(); } catch (_) {}
+  if (rcon && rconConnected) {
+    try { await rcon.disconnect(); } catch (_) {}
   }
-  rconConn = null;
+  rcon = null;
+  rconConnected = false;
+  if (rconKillTimer) { clearTimeout(rconKillTimer); rconKillTimer = null; }
 }
 
 async function rconQuery(cmd) {
-  // Simple mutex so we don’t hammer the server
+  // simple mutex
   while (rconBusy) {
-    await new Promise(r => setTimeout(r, 20));
+    await new Promise(r => setTimeout(r, 15));
   }
   rconBusy = true;
   try {
-    const conn = await getRcon();
-    const res = await Promise.race([
-      conn.send(cmd),
+    const c = await ensureRcon();
+    const out = await Promise.race([
+      c.send(cmd),
       new Promise((_, rej) => setTimeout(() => rej(new Error('RCON timeout')), RCON_TIMEOUT_MS))
     ]);
     rconLastUse = Date.now();
-    return String(res || '');
+    scheduleRconClose();
+    return String(out || '');
   } finally {
     rconBusy = false;
   }
@@ -94,54 +98,40 @@ async function rconQuery(cmd) {
 
 // ---------- Helpers ----------
 function parseList(raw) {
-  // Works with vanilla/Forge “list” format:
-  // "There are 2 of a max of 50 players online: name1, name2"
+  // Typical: "There are 2 of a max of 50 players online: name1, name2"
   const out = { count: 0, players: [] };
   if (!raw) return out;
 
-  // count
-  const mCount = raw.match(/There are\s+(\d+)\s+of/i);
-  if (mCount) out.count = Number(mCount[1] || 0);
+  const m = raw.match(/There are\s+(\d+)\s+of/i);
+  if (m) out.count = Number(m[1] || 0);
 
-  // names
   const parts = raw.split('players online:');
   if (parts.length > 1) {
-    const namesStr = parts[1].trim();
-    if (namesStr.length > 0) {
-      namesStr.split(',').map(s => s.trim()).filter(Boolean).forEach(n => {
-        out.players.push({ username: n });
-      });
+    const names = parts[1].trim();
+    if (names) {
+      names.split(',').map(s => s.trim()).filter(Boolean).forEach(n => out.players.push({ username: n }));
     }
   }
   return out;
 }
 
-// ---------- API routes (mounted BEFORE static) ----------
+// ---------- API (mounted BEFORE static) ----------
 const api = express.Router();
 api.use(requireAuth);
 
-// Health/basic status
 api.get('/status', async (req, res) => {
   try {
-    // If RCON responds to "list", consider server "online"
     let online = false;
     try {
       const raw = await rconQuery('list');
       online = raw && raw.toLowerCase().includes('players online');
     } catch (_) { online = false; }
-
-    res.json({
-      online,
-      // If you later implement schedules, fill these:
-      next_restart_iso: null,
-      next_restart_seconds: null
-    });
+    res.json({ online, next_restart_iso: null, next_restart_seconds: null });
   } catch (e) {
     res.status(500).json({ error: e.message || String(e) });
   }
 });
 
-// Online snapshot via RCON
 api.get('/online', async (req, res) => {
   try {
     const raw = await rconQuery('list');
@@ -152,7 +142,6 @@ api.get('/online', async (req, res) => {
   }
 });
 
-// Run an arbitrary command
 api.post('/command', async (req, res) => {
   try {
     const { command } = req.body || {};
@@ -166,12 +155,11 @@ api.post('/command', async (req, res) => {
   }
 });
 
-// Players list for the UI (from live `list` only; DB optional)
+// Basic players table from live list (DB optional)
 api.get('/players', async (req, res) => {
   try {
     const raw = await rconQuery('list');
     const parsed = parseList(raw);
-    // Shape it like the table expects
     const rows = parsed.players.map((p, i) => ({
       id: i + 1,
       username: p.username,
@@ -187,11 +175,10 @@ api.get('/players', async (req, res) => {
   }
 });
 
-// One player detail (stub until DB/enriched log parsing is enabled)
-api.get('/player/:id', async (req, res) => {
+// Player detail stub (until DB/log parsing is enabled)
+api.get('/player/:id', (req, res) => {
   const id = Number(req.params.id || 0);
   if (!id) return res.status(400).json({ error: 'bad id' });
-  // Since we're not persisting players yet, just echo minimal info
   res.json({
     player: { id, username: 'Unknown', uuid: null, first_seen: null, last_seen: null, total_playtime: 0, last_ip: null },
     ips: [],
@@ -200,35 +187,30 @@ api.get('/player/:id', async (req, res) => {
   });
 });
 
-// (Optional) emergency restart hook you wire to your own script
 api.post('/restart-now', async (req, res) => {
-  // Example broadcast; replace with your own service control if desired
-  try { await rconQuery(`say [Panel] Restarting now...`); } catch (_) {}
+  try { await rconQuery('say [Panel] Restarting now...'); } catch (_) {}
   res.json({ ok: true });
 });
 
 app.use('/api', api);
 
-// ---------- Static UI (from app/public) ----------
-const PUBLIC_DIR = path.join(__dirname, 'public');
-const indexHtml = path.join(PUBLIC_DIR, 'index.html');
-
+// ---------- Static UI ----------
 app.use(express.static(PUBLIC_DIR));
+
 app.get('/', (_req, res) => {
-  if (!fs.existsSync(indexHtml)) {
-    res
+  if (!fs.existsSync(INDEX_HTML)) {
+    return res
       .status(200)
       .type('text/plain')
       .send(`MC RCON Panel\nUI file not found. Place index.html in ${PUBLIC_DIR}.`);
-  } else {
-    res.sendFile(indexHtml);
   }
+  res.sendFile(INDEX_HTML);
 });
 
-// Fallback to index for any unmatched non-API route (single-page app)
+// SPA fallback (but not for /api/*)
 app.get('*', (req, res) => {
   if (req.path.startsWith('/api/')) return res.status(404).send('Not found');
-  if (fs.existsSync(indexHtml)) return res.sendFile(indexHtml);
+  if (fs.existsSync(INDEX_HTML)) return res.sendFile(INDEX_HTML);
   res
     .status(200)
     .type('text/plain')
