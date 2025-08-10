@@ -2,7 +2,9 @@
 const path = require('path');
 const sqlite3 = require('sqlite3').verbose();
 
-const DB_FILE = path.join(__dirname, 'webgui.sqlite');
+const rawFile = process.env.DB_FILE || path.join(__dirname, 'webgui.sqlite');
+const DB_FILE = path.isAbsolute(rawFile) ? rawFile : path.join(__dirname, rawFile);
+
 const db = new sqlite3.Database(DB_FILE);
 
 function run(sql, params = []) {
@@ -25,7 +27,9 @@ function all(sql, params = []) {
 }
 
 async function initSchema() {
+  await run('PRAGMA journal_mode = WAL');
   await run('PRAGMA foreign_keys = ON');
+
   await run(`
     CREATE TABLE IF NOT EXISTS players (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -85,6 +89,14 @@ async function initSchema() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       label TEXT UNIQUE,
       message TEXT NOT NULL
+    )`);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS panel_audit(
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      action TEXT NOT NULL,
+      payload TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`);
 }
 
