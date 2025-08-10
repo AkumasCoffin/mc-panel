@@ -4,8 +4,16 @@ After=network.target
 
 [Service]
 User=root
-Environment=NODE_ENV=production
 WorkingDirectory=/opt/mc-rcon-webgui
+Environment=NODE_ENV=production
+# Panel auth + RCON (override in /etc/systemd/system/rcon-webgui.service.d/override.conf if desired)
+Environment=PANEL_USER=admin
+Environment=PANEL_PASS=changeme
+Environment=RCON_HOST=127.0.0.1
+Environment=RCON_PORT=25575
+Environment=RCON_PASS=12KaliRoot12
+Environment=HOST=0.0.0.0
+Environment=PORT=8080
 ExecStart=/usr/bin/node app/server.js
 Restart=always
 RestartSec=3
