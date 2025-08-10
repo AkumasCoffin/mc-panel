@@ -1,6 +1,9 @@
 // app/server.js
-// Minimal MC RCON panel backend without any RCON npm deps.
-// Reads the Minecraft server log and exposes the endpoints the UI needs.
+// MC RCON panel backend without RCON deps.
+// - Serves UI from app/public
+// - Basic Auth via env
+// - Tracks players by tailing Minecraft log
+// - Implements /api/status, /api/online, /api/players, /api/player/:id, /api/command (list only), /api/bans
 
 const path = require('path');
 const fs = require('fs');
@@ -11,18 +14,20 @@ const express = require('express');
 const HOST = process.env.HOST || '0.0.0.0';
 const PORT = Number(process.env.PORT || 8080);
 
-// Basic auth for the panel
 const PANEL_USER = process.env.PANEL_USER || 'admin';
 const PANEL_PASS = process.env.PANEL_PASS || 'changeme';
 
-// Where your Minecraft server log lives (MUST be readable by this service)
-const SERVER_LOG = process.env.SERVER_LOG || '/opt/minecraft/server/logs/latest.log';
+// Minecraft paths
+const SERVER_DIR = process.env.SERVER_DIR || '/opt/minecraft/server';
+const SERVER_LOG = process.env.SERVER_LOG || path.join(SERVER_DIR, 'logs/latest.log');
+const BANNED_PLAYERS_JSON = process.env.BANNED_PLAYERS_JSON || path.join(SERVER_DIR, 'banned-players.json');
+const BANNED_IPS_JSON = process.env.BANNED_IPS_JSON || path.join(SERVER_DIR, 'banned-ips.json');
 
 // ---------- EXPRESS ----------
 const app = express();
 app.use(express.json());
 
-// simple Basic Auth middleware (panel realm = "panel")
+// Basic Auth
 function basicAuth(req, res, next) {
   const hdr = req.headers.authorization || '';
   if (!hdr.startsWith('Basic ')) {
@@ -30,27 +35,19 @@ function basicAuth(req, res, next) {
     return res.status(401).send('Authentication required.');
   }
   const raw = Buffer.from(hdr.slice(6), 'base64').toString('utf8');
-  const idx = raw.indexOf(':');
-  const user = idx >= 0 ? raw.slice(0, idx) : raw;
-  const pass = idx >= 0 ? raw.slice(idx + 1) : '';
+  const i = raw.indexOf(':');
+  const user = i >= 0 ? raw.slice(0, i) : raw;
+  const pass = i >= 0 ? raw.slice(i + 1) : '';
   if (user === PANEL_USER && pass === PANEL_PASS) return next();
   res.set('WWW-Authenticate', 'Basic realm="panel"');
   return res.status(401).send('Authentication required.');
 }
 
-// Serve static UI from app/public
+// Serve static UI
 const PUBLIC_DIR = path.join(__dirname, 'public');
 app.use(express.static(PUBLIC_DIR, { index: false }));
 
 // ---------- In-memory player tracking via log tail ----------
-/*
-Expected lines (your log already looks like this):
-[10Aug2025 20:49:22.264] ... UUID of player Akumas_Coffin_ is 2f996c05-bf96-4691-84ca-82128df5103a
-[10Aug2025 20:49:24.846] ... Akumas_Coffin_[/206.83.119.86:2399] logged in with entity id ...
-[10Aug2025 20:49:24.938] ... Akumas_Coffin_ joined the game
-[10Aug2025 20:49:49.555] ... Akumas_Coffin_ left the game
-*/
-
 const playersByName = new Map(); // name -> record
 let nextPlayerId = 1;
 
@@ -70,7 +67,7 @@ function ensurePlayer(name) {
       last_seen: null,
       total_playtime: 0, // seconds
       online: false,
-      _login_ts: null // internal ms
+      _login_ts: null
     };
     playersByName.set(name, p);
   }
@@ -78,14 +75,13 @@ function ensurePlayer(name) {
 }
 
 function parseLogLine(line) {
-  // UUID assignment
+  // UUID line
   let m = line.match(/\bUUID of player ([\w.\-+]+) is ([0-9a-fA-F\-]{32,36})/);
   if (m) {
     const [, name, uuid] = m;
-    ensurePlayer(name).uuid = uuid.toLowerCase();
+    ensurePlayer(name).uuid = (uuid || '').toLowerCase();
     return;
   }
-
   // login with IP
   m = line.match(/:\s*([A-Za-z0-9_\-\.]+)\[\/([0-9\.]+):\d+\]\s+logged in/i);
   if (m) {
@@ -99,7 +95,6 @@ function parseLogLine(line) {
     p.online = true;
     return;
   }
-
   // joined the game
   m = line.match(/:\s*([A-Za-z0-9_\-\.]+)\s+joined the game/);
   if (m) {
@@ -110,7 +105,6 @@ function parseLogLine(line) {
     p.online = true;
     return;
   }
-
   // left the game
   m = line.match(/:\s*([A-Za-z0-9_\-\.]+)\s+left the game/);
   if (m) {
@@ -123,7 +117,6 @@ function parseLogLine(line) {
     }
     p.online = false;
     p.last_seen = nowIso();
-    return;
   }
 }
 
@@ -147,8 +140,6 @@ function bootstrapFromLog(file) {
 function startTail(file) {
   let lastSize = 0;
   try { lastSize = fs.statSync(file).size; } catch {}
-
-  // Watch the directory; on change to latest.log, read the tail
   fs.watch(path.dirname(file), { persistent: true }, (evt, fname) => {
     if (!fname || fname !== path.basename(file)) return;
     try {
@@ -163,13 +154,10 @@ function startTail(file) {
         buf.toString('utf8').split(/\r?\n/).forEach(parseLogLine);
       }
       lastSize = stat.size;
-    } catch {
-      // ignore transient errors
-    }
+    } catch {}
   });
 }
 
-// init tracker
 if (SERVER_LOG && fs.existsSync(SERVER_LOG)) {
   console.log('[panel] Tracking players from log:', SERVER_LOG);
   bootstrapFromLog(SERVER_LOG);
@@ -178,19 +166,31 @@ if (SERVER_LOG && fs.existsSync(SERVER_LOG)) {
   console.warn('[panel] SERVER_LOG missing or unreadable:', SERVER_LOG);
 }
 
-// ---------- API ----------
+// ---------- Helpers ----------
+function readJsonSafe(fp) {
+  try {
+    if (!fs.existsSync(fp)) return null;
+    const txt = fs.readFileSync(fp, 'utf8');
+    return JSON.parse(txt);
+  } catch (e) {
+    console.warn('[panel] Failed reading JSON:', fp, e.message);
+    return null;
+  }
+}
 
-// Status (we mark server online if we can run and (optionally) see the log)
+function mapDurationSec(secs) {
+  return typeof secs === 'number' ? secs : null;
+}
+
+// ---------- API ----------
 app.get('/api/status', basicAuth, (req, res) => {
-  const online = true; // if panel is up, assume server reachable; refine later if needed
   res.json({
-    online,
+    online: true,
     next_restart_iso: null,
     next_restart_seconds: null
   });
 });
 
-// Online roster
 app.get('/api/online', basicAuth, (req, res) => {
   const online = [...playersByName.values()].filter(p => p.online);
   res.json({
@@ -199,7 +199,6 @@ app.get('/api/online', basicAuth, (req, res) => {
   });
 });
 
-// Players table (for the Players tab)
 app.get('/api/players', basicAuth, (req, res) => {
   const all = [...playersByName.values()];
   all.sort((a, b) => String(b.last_seen || '').localeCompare(String(a.last_seen || '')));
@@ -214,7 +213,6 @@ app.get('/api/players', basicAuth, (req, res) => {
   })));
 });
 
-// One player detail
 app.get('/api/player/:id', basicAuth, (req, res) => {
   const id = Number(req.params.id);
   const p = [...playersByName.values()].find(x => x.id === id);
@@ -230,30 +228,79 @@ app.get('/api/player/:id', basicAuth, (req, res) => {
       last_ip: p.last_ip
     },
     ips: p.last_ip ? [{ ip: p.last_ip, seen_at: p.last_seen }] : [],
-    sessions: [],  // left blank in log-mode
-    commands: []   // left blank in log-mode
+    sessions: [],
+    commands: []
   });
 });
 
-// Run a command (log-mode: we only emulate "list")
+// Emulated command (list only)
 app.post('/api/command', basicAuth, (req, res) => {
   const cmd = String((req.body && req.body.command) || '').trim();
   if (!cmd) return res.json({ ok: false, out: 'No command provided.' });
-
   if (/^list\b/i.test(cmd)) {
     const online = [...playersByName.values()].filter(p => p.online).map(p => p.username);
     const out = `There are ${online.length} of a max of 50 players online: ${online.join(', ')}\n`;
     return res.json({ ok: true, out });
   }
-
-  // For other commands, RCON is not wired here (no npm rcon deps). Return 501.
   return res.status(501).json({ ok: false, out: 'RCON disabled in log-mode; only "list" is emulated.' });
 });
 
-// (Optional) Health check
+// NEW: Bans endpoint (reads banned-players.json and banned-ips.json)
+app.get('/api/bans', basicAuth, (req, res) => {
+  const pjson = readJsonSafe(BANNED_PLAYERS_JSON) || [];
+  const ijson = readJsonSafe(BANNED_IPS_JSON) || [];
+
+  // Format per frontend expectations (bubble renderer)
+  const players = pjson.map(row => {
+    // vanilla fields: name, uuid, created, source, expires, reason
+    const name = row.name || row.user || row.target || '';
+    const uuid = row.uuid || null;
+    const by = row.source || row.by || 'Server';
+    const reason = row.reason || 'No reason provided';
+    const banned_at = row.created || row.banned_at || null;
+    // enrich if we know this player
+    const p = name ? playersByName.get(name) : null;
+    return {
+      type: 'player',
+      target: name,
+      username: name,
+      uuid,
+      by,
+      reason,
+      banned_at,
+      last_ip: p ? p.last_ip : null,
+      last_seen: p ? p.last_seen : null,
+      playtime_seconds: p ? mapDurationSec(p.total_playtime) : null
+    };
+  });
+
+  const ips = ijson.map(row => {
+    // vanilla fields: ip, created, source, expires, reason
+    const ip = row.ip || row.target || '';
+    const by = row.source || row.by || 'Server';
+    const reason = row.reason || 'No reason provided';
+    const banned_at = row.created || row.banned_at || null;
+    return {
+      type: 'ip',
+      target: ip,
+      username: null,
+      uuid: null,
+      by,
+      reason,
+      banned_at,
+      last_ip: ip,
+      last_seen: null,
+      playtime_seconds: null
+    };
+  });
+
+  res.json({ players, ips });
+});
+
+// Health
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 
-// Fallback to UI (SPA-ish)
+// Fallback to UI
 app.get('*', (req, res) => {
   const indexPath = path.join(PUBLIC_DIR, 'index.html');
   if (fs.existsSync(indexPath)) return res.sendFile(indexPath);
