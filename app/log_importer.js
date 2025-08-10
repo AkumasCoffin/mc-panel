@@ -6,7 +6,7 @@ const path = require('path');
 const { db, initSchema } = require('./db');
 
 function paths(mcPath) {
-  const base = mcPath || process.env.MC_SERVER_PATH || '/root/mc-server-backup';
+  const base = mcPath || process.env.MC_SERVER_PATH || process.env.SERVER_DIR || '/root/mc-server-backup';
   return {
     LOG_DIR: path.join(base, 'logs'),
     LATEST_LOG: path.join(base, 'logs/latest.log'),
