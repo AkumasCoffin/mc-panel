@@ -1,1 +1,110 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Minecraft RCON Panel</title>
+<style>
+:root{--bg:#0b0f14;--card:#121826;--muted:#8390a4;--text:#e9f0ff;--acc:#39ff14;--acc2:#2a66ff;--danger:#ff4757}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,Segoe UI,Roboto,Ubuntu}
+.sidebar{position:fixed;top:0;left:0;bottom:0;width:240px;background:#0d1320;border-right:1px solid #1f2a44;padding:16px}
+.sidebar h1{font-size:16px;margin:0 0 12px 0;color:#b7c0d7}
+.nav a{display:block;padding:10px 12px;border-radius:8px;color:#cbd5e0;text-decoration:none;margin:4px 0}
+.nav a.active,.nav a:hover{background:#15203a;color:#fff}
+.main{margin-left:240px;padding:16px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+.card{background:var(--card);border:1px solid #1f2a44;border-radius:12px;padding:12px}
+.btn{background:var(--acc2);color:#fff;border:none;border-radius:8px;padding:8px 10px;cursor:pointer}
+.btn.danger{background:var(--danger)}
+input,select{width:100%;padding:8px;border-radius:8px;background:#0c1322;border:1px solid #1f2a44;color:#e6f1ff;margin:6px 0}
+table{width:100%;border-collapse:collapse}th,td{padding:8px;border-bottom:1px solid #202a46}th{color:#9fb0cf;text-align:left}
+.small{color:#8aa0c8}
+.header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+.tag{display:inline-block;background:#0d7a36;color:#eafff1;padding:2px 6px;border-radius:6px;font-size:12px;margin-left:6px}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.65);display:none;align-items:center;justify-content:center}
+.modal .win{background:#0f172a;border:1px solid #233257;border-radius:12px;max-width:800px;width:90%;padding:16px;max-height:80vh;overflow:auto}
+pre{white-space:pre-wrap;background:#0b1325;padding:8px;border-radius:8px}
+.topbar{display:flex;gap:8px;align-items:center;margin-bottom:12px}
+</style>
+</head>
+<body>
+<div class="sidebar">
+  <h1>MC RCON Panel</h1>
+  <div class="nav">
+    <a href="#" data-page="dash" class="active">Dashboard</a>
+    <a href="#" data-page="players">Players</a>
+    <a href="#" data-page="bans">Bans</a>
+    <a href="#" data-page="rest">Restarts</a>
+    <a href="#" data-page="cmd">Commands</a>
+  </div>
+</div>
+<div class="main">
+  <div id="page-dash" class="page">
+    <div class="header"><h2>Dashboard</h2><button id="btn-emerg" class="btn danger">Emergency Restart</button></div>
+    <div class="cards">
+      <div class="card"><h3>Status</h3><div id="status">Loading…</div></div>
+      <div class="card"><h3>Online</h3><div id="online">-</div></div>
+      <div class="card"><h3>Next Restart</h3><div id="next">-</div></div>
+      <div class="card"><h3>Recent</h3><pre id="recent" class="small">—</pre></div>
+    </div>
+  </div>
 
+  <div id="page-players" class="page" style="display:none">
+    <div class="header"><h2>Players</h2><div class="topbar"><input id="psearch" placeholder="Search username/IP"/></div></div>
+    <div class="card">
+      <table id="ptbl"><thead><tr><th>Username</th><th>UUID</th><th>Latest IP</th><th>First</th><th>Last</th><th>Playtime</th><th></th></tr></thead><tbody></tbody></table>
+    </div>
+  </div>
+
+  <div id="page-bans" class="page" style="display:none">
+    <div class="header"><h2>Bans</h2></div>
+    <div class="card">
+      <input id="ban-ip" placeholder="IP to ban (x.x.x.x)"/>
+      <input id="ban-reason" placeholder="Reason (optional)"/>
+      <button id="ban-do" class="btn">Ban IP</button>
+      <h4>Current</h4>
+      <pre id="bans"></pre>
+    </div>
+  </div>
+
+  <div id="page-rest" class="page" style="display:none">
+    <div class="header"><h2>Scheduled Restarts</h2></div>
+    <div class="card">
+      <table id="stbl"><thead><tr><th>ID</th><th>Cron</th><th>Label</th><th>Enabled</th><th>Actions</th></tr></thead><tbody></tbody></table>
+      <div class="topbar"><input id="cron" placeholder="Cron (e.g. 0 3 * * *)"/><input id="label" placeholder="Label (optional)"/><button id="sadd" class="btn">Add</button></div>
+    </div>
+  </div>
+
+  <div id="page-cmd" class="page" style="display:none">
+    <div class="header"><h2>Commands</h2></div>
+    <div class="card"><input id="cmd" placeholder="say Hello from web"/><button id="send" class="btn">Run</button><pre id="cout"></pre></div>
+  </div>
+</div>
+
+<div id="modal" class="modal"><div class="win"><div id="modal-body"></div><div style="text-align:right;margin-top:8px"><button id="modal-close" class="btn">Close</button></div></div></div>
+
+<script>
+const pages=['dash','players','bans','rest','cmd'];
+document.querySelectorAll('.nav a').forEach(a=>{a.onclick=(e)=>{e.preventDefault();pages.forEach(p=>document.getElementById('page-'+p).style.display='none');document.querySelectorAll('.nav a').forEach(x=>x.classList.remove('active'));a.classList.add('active');document.getElementById('page-'+a.dataset.page).style.display='block';};});
+function showModal(html){const m=document.getElementById('modal');document.getElementById('modal-body').innerHTML=html;m.style.display='flex';}
+document.getElementById('modal-close').onclick=()=>{document.getElementById('modal').style.display='none';};
+async function api(p,o){const r=await fetch(p,{credentials:'include',headers:{'Content-Type':'application/json'},...o});if(!r.ok)throw new Error(await r.text());return r.json();}
+function fmtDur(s){s=Number(s||0);const d=Math.floor(s/86400);s%=86400;const h=Math.floor(s/3600);s%=3600;const m=Math.floor(s/60);return (d?d+'d ':'')+h+'h '+m+'m';}
+
+async function tick(){
+  try{const st=await api('/api/status');document.getElementById('status').textContent=st.online?'Online':'Offline';document.getElementById('next').textContent=st.next_restart||'None';}catch{}
+  try{const on=await api('/api/online');document.getElementById('online').textContent=`${on.count} players`;document.getElementById('recent').textContent=on.players.map(p=>`${p.username} (${p.uuid||''})`).join('\n')||'—';}catch{}
+  try{const bs=await api('/api/bans');document.getElementById('bans').textContent=JSON.stringify(bs,null,2);}catch{}
+  try{const ss=await api('/api/schedules');const tb=document.querySelector('#stbl tbody');tb.innerHTML=ss.map(s=>`<tr><td>${s.id}</td><td>${s.cron}</td><td>${s.label||''}</td><td>${s.enabled?'yes':'no'}</td><td><button class="t" data-id="${s.id}">Toggle</button> <button class="d" data-id="${s.id}">Delete</button></td></tr>`).join('');}catch{}
+  try{const ps=await api('/api/players');const q=(document.getElementById('psearch').value||'').toLowerCase();const tb=document.querySelector('#ptbl tbody');tb.innerHTML=ps.filter(p=>!q||p.username.toLowerCase().includes(q)||(p.last_ip||'').includes(q)).map(p=>`<tr><td>${p.username}</td><td class="small">${p.uuid||''}</td><td>${p.last_ip||''}</td><td class="small">${p.first_seen||''}</td><td class="small">${p.last_seen||''}</td><td>${fmtDur(p.total_playtime||0)}</td><td><button class="v" data-id="${p.id}">View</button></td></tr>`).join('');}catch{}
+}
+document.getElementById('stbl').onclick=async(e)=>{if(e.target.classList.contains('t')){await api('/api/schedules/'+e.target.dataset.id+'/toggle',{method:'POST'});tick();}if(e.target.classList.contains('d')){await api('/api/schedules/'+e.target.dataset.id,{method:'DELETE'});tick();}};
+document.getElementById('sadd').onclick=async()=>{const cron=document.getElementById('cron').value.trim();const label=document.getElementById('label').value.trim();if(!cron)return;await api('/api/schedules',{method:'POST',body:JSON.stringify({cron,label})});document.getElementById('cron').value='';document.getElementById('label').value='';tick();};
+document.getElementById('send').onclick=async()=>{const c=document.getElementById('cmd').value.trim();if(!c)return;const out=await api('/api/command',{method:'POST',body:JSON.stringify({command:c})});document.getElementById('cout').textContent=out.out||JSON.stringify(out);};
+document.getElementById('ban-do').onclick=async()=>{const ip=document.getElementById('ban-ip').value.trim();const reason=document.getElementById('ban-reason').value.trim();if(!ip)return;await api('/api/ban-ip',{method:'POST',body:JSON.stringify({ip,reason})});tick();};
+document.getElementById('ptbl').onclick=async(e)=>{if(!e.target.classList.contains('v'))return;const id=e.target.dataset.id;const d=await api('/api/player/'+id);const lines=[];const p=d.player;lines.push(`<h3>${p.username} <span class="tag">${p.uuid||''}</span></h3>`);lines.push(`<div class="small">Latest IP: ${p.last_ip||'-'} | First: ${p.first_seen||'-'} | Last: ${p.last_seen||'-'} | Playtime: ${fmtDur(p.total_playtime||0)}</div>`);lines.push('<h4>IPs</h4><ul>'+d.ips.map(x=>`<li>${x.ip} <span class="small">${x.seen_at}</span></li>`).join('')+'</ul>');lines.push('<h4>Sessions</h4><ul>'+d.sessions.map(s=>`<li>${s.login_time} → ${s.logout_time||'(active)'} <span class="small">${s.duration?fmtDur(s.duration):''}</span></li>`).join('')+'</ul>');lines.push('<h4>Commands</h4><ul>'+d.commands.map(c=>`<li>${c.executed_at}: <code>${(c.command||'').replace(/</g,'&lt;')}</code></li>`).join('')+'</ul>');showModal(lines.join(''));};
+document.getElementById('btn-emerg').onclick=async()=>{if(!confirm('Emergency restart now?'))return;await api('/api/restart-now',{method:'POST'});};
+setInterval(tick,2000);tick();
+</script>
+</body>
+</html>
