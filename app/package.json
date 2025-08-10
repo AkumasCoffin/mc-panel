@@ -1,8 +1,8 @@
 {
   "name": "mc-rcon-webgui",
-  "version": "1.7.0",
+  "version": "1.8.0",
   "private": true,
-  "description": "Minecraft RCON Panel (log-mode, SQLite, cron restarts)",
+  "description": "Minecraft WebGUI with RCON, cron restarts, SQLite history, presets",
   "main": "server.js",
   "type": "commonjs",
   "scripts": {
@@ -10,10 +10,11 @@
     "postinstall": "node -e \"try{require('fs').mkdirSync('app/public',{recursive:true})}catch(e){}\""
   },
   "dependencies": {
+    "cron-parser": "^4.9.0",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
-    "sqlite3": "^5.1.7",
     "node-cron": "^3.0.3",
-    "cron-parser": "^4.9.0"
+    "rcon-client": "^4.3.7",
+    "sqlite3": "^5.1.7"
   }
 }
