@@ -33,11 +33,11 @@ textarea{min-height:86px;resize:vertical}
 table{width:100%;border-collapse:collapse}
 th,td{padding:8px;border-bottom:1px solid #1a2540}th{color:#a9bbd9;text-align:left;font-weight:600}
 .modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;padding:16px}
-.win{background:#0f172a;border:1px solid #223355;border-radius:12px;max-width:940px;width:100%;max-height:85vh;overflow:auto;padding:16px}
+.win{background:#0f172a;border:1px solid #223355;border-radius:12px;max-width:900px;width:100%;max-height:85vh;overflow:auto;padding:16px}
 pre{white-space:pre-wrap;background:#0c1426;padding:10px;border-radius:10px}
 .toast{position:fixed;right:16px;bottom:16px;background:#0f172a;border:1px solid #213358;padding:10px 12px;border-radius:10px;display:none}
 .tag{display:inline-block;border:1px solid #2753a6;color:#cfe2ff;background:#0f1c39;border-radius:999px;padding:2px 8px;font-size:12px}
-canvas{width:100%;height:140px;background:#0c1426;border:1px solid #1b2644;border-radius:10px}
+canvas{width:100%;height:120px;background:#0c1426;border:1px solid #1a2540;border-radius:10px}
 </style>
 </head>
 <body>
@@ -50,7 +50,6 @@ canvas{width:100%;height:140px;background:#0c1426;border:1px solid #1b2644;borde
     <a href="#" data-page="rest">⏱️ Restarts</a>
     <a href="#" data-page="cmd">⌨️ Commands</a>
     <a href="#" data-page="bc">📣 Broadcasts</a>
-    <a href="#" data-page="audit">🧾 Audit</a>
   </div>
 </div>
 
@@ -77,7 +76,6 @@ canvas{width:100%;height:140px;background:#0c1426;border:1px solid #1b2644;borde
       <div class="card">
         <h3>Perf (24h)</h3>
         <canvas id="perf"></canvas>
-        <div class="small">Players online + RCON latency</div>
       </div>
     </div>
   </div>
@@ -123,7 +121,15 @@ canvas{width:100%;height:140px;background:#0c1426;border:1px solid #1b2644;borde
   <!-- Commands -->
   <div id="page-cmd" class="page" style="display:none">
     <div class="header"><h2>Commands</h2></div>
-    <div class="card"><input id="cmd" placeholder='say Hello from panel'/> <button id="send" class="btn">Run</button> <pre id="cout"></pre></div>
+    <div class="card">
+      <input id="cmd" placeholder='say Hello from panel'/> <button id="send" class="btn">Run</button> 
+      <pre id="cout"></pre>
+      <div style="margin-top:10px">
+        <input id="kickUser" placeholder="Kick username"/>
+        <input id="kickReason" placeholder="Reason (optional)"/>
+        <button id="kickBtn" class="btn danger">Kick</button>
+      </div>
+    </div>
   </div>
 
   <!-- Broadcast presets -->
@@ -139,19 +145,13 @@ canvas{width:100%;height:140px;background:#0c1426;border:1px solid #1b2644;borde
       <button id="bp-send" class="btn ok">Send Broadcast</button>
     </div>
   </div>
-
-  <!-- Audit -->
-  <div id="page-audit" class="page" style="display:none">
-    <div class="header"><h2>Audit</h2></div>
-    <div class="card"><pre id="audit"></pre></div>
-  </div>
 </div>
 
 <div id="modal" class="modal"><div class="win"><div id="modal-body"></div><div style="text-align:right;margin-top:8px"><button id="modal-close" class="btn ghost">Close</button></div></div></div>
 <div id="toast" class="toast"></div>
 
 <script>
-const pages=['dash','players','bans','rest','cmd','bc','audit'];
+const pages=['dash','players','bans','rest','cmd','bc'];
 document.querySelectorAll('.nav a').forEach(a=>{a.onclick=(e)=>{e.preventDefault();pages.forEach(p=>document.getElementById('page-'+p).style.display='none');document.querySelectorAll('.nav a').forEach(x=>x.classList.remove('active'));a.classList.add('active');document.getElementById('page-'+a.dataset.page).style.display='block';};});
 function showModal(html){const m=document.getElementById('modal');document.getElementById('modal-body').innerHTML=html;m.style.display='flex';}
 document.getElementById('modal-close').onclick=()=>{document.getElementById('modal').style.display='none';};
@@ -167,6 +167,7 @@ document.getElementById('bcPick').onclick=async()=>{const rows=await api('/api/b
 document.getElementById('modal-body').onclick=(e)=>{if(e.target.classList.contains('bp')){document.getElementById('bcText').value=decodeURIComponent(e.target.dataset.msg);document.getElementById('modal').style.display='none';}};
 
 document.getElementById('send').onclick=async()=>{const c=document.getElementById('cmd').value.trim();if(!c)return;const out=await api('/api/command',{method:'POST',body:JSON.stringify({command:c})});document.getElementById('cout').textContent=out.out||JSON.stringify(out);};
+document.getElementById('kickBtn').onclick=async()=>{const username=document.getElementById('kickUser').value.trim();const reason=document.getElementById('kickReason').value.trim();if(!username)return toast('Enter username');await api('/api/kick',{method:'POST',body:JSON.stringify({username,reason})}).then(()=>toast('Kicked')).catch(()=>toast('Failed'));};
 
 document.getElementById('ban-do').onclick=async()=>{const ip=document.getElementById('ban-ip').value.trim();const preset=document.getElementById('ban-preset').value;const manual=document.getElementById('ban-reason').value.trim();const reason=manual||preset||undefined;if(!ip)return toast('Enter IP');await api('/api/ban-ip',{method:'POST',body:JSON.stringify({ip,reason})}).then(()=>{toast('IP banned');refreshBans();}).catch(()=>toast('Failed'));};
 document.getElementById('ban-save').onclick=async()=>{const label=document.getElementById('ban-label').value.trim();const reason=document.getElementById('ban-msg').value.trim();if(!label||!reason)return toast('Fill both');await api('/api/ban-presets',{method:'POST',body:JSON.stringify({label,reason})}).then(()=>{toast('Preset saved');refreshBanPresets();}).catch(()=>toast('Failed'));};
@@ -188,41 +189,40 @@ async function refreshPlayers(){const ps=await api('/api/players');const q=(docu
 async function refreshBans(){const data=await api('/api/bans');document.getElementById('bans').textContent=JSON.stringify(data,null,2);}
 async function refreshBanPresets(){const rows=await api('/api/ban-presets');const sel=document.getElementById('ban-preset');sel.innerHTML='<option value="">(no preset)</option>'+rows.map(r=>`<option value="${r.reason.replace(/"/g,'&quot;')}">${r.label}</option>`).join('');document.getElementById('ban-presets-note').textContent=rows.length?`${rows.length} preset(s) available.`:'No presets yet.';}
 async function refreshBcPresets(){const rows=await api('/api/broadcast-presets');const sel=document.getElementById('bp-select');sel.innerHTML=rows.map(r=>`<option data-message="${(r.message||'').replace(/"/g,'&quot;')}">${r.label}</option>`).join('');}
-async function refreshAudit(){const rows=await api('/api/audit?limit=100');document.getElementById('audit').textContent=JSON.stringify(rows, null, 2);}
-
-async function tick(){try{await refreshStatus();}catch{}try{await refreshOnline();}catch{}try{await refreshPlayers();}catch{}}
-setInterval(tick,2000); tick();
-refreshBans().catch(()=>{});refreshBanPresets().catch(()=>{});refreshBcPresets().catch(()=>{});refreshSchedules().catch(()=>{});refreshAudit().catch(()=>{});
-
 async function refreshSchedules(){const rows=await api('/api/schedules');const tb=document.querySelector('#stbl tbody');tb.innerHTML=rows.map(r=>`<tr><td>${r.id}</td><td>${r.cron}</td><td>${r.label||''}</td><td>${r.enabled?'yes':'no'}</td><td><button class="t btn ghost" data-id="${r.id}">Toggle</button> <button class="d btn ghost" data-id="${r.id}">Delete</button></td></tr>`).join('');}
 
-// mini chart (no external libs): players & latency
 async function drawPerf(){
-  const data = await api('/api/metrics/online?range=24h').catch(()=>[]);
-  const c = document.getElementById('perf');
-  const ctx = c.getContext('2d');
-  const W = c.width = c.clientWidth, H = c.height = 140;
-  ctx.clearRect(0,0,W,H);
-  if(!data.length){ctx.fillStyle="#9db0cc";ctx.fillText("No data yet",10,20);return;}
-  const players = data.map(d=>d.online_count);
-  const latency = data.map(d=>d.rcon_latency_ms||0);
-  const maxP = Math.max(1, ...players);
-  const maxL = Math.max(50, ...latency);
-  function path(series, color){
-    ctx.beginPath();
-    series.forEach((v,i)=>{
-      const x = (i/(series.length-1))* (W-10) + 5;
-      const y = H-10 - (v/(color==='p'?maxP:maxL))*(H-20);
-      i?ctx.lineTo(x,y):ctx.moveTo(x,y);
-    });
-    ctx.strokeStyle = color==='p' ? '#2a66ff' : '#39ff14';
-    ctx.lineWidth = 2; ctx.stroke();
-  }
-  path(players,'p'); path(latency,'l');
-  ctx.fillStyle="#9db0cc";ctx.fillText(`players max ${maxP}`,8,12);
-  ctx.fillText(`lat ms max ${maxL}`,120,12);
+  try{
+    const rows=await api('/api/metrics/online?range=24h');
+    const c=document.getElementById('perf'); const ctx=c.getContext('2d');
+    ctx.clearRect(0,0,c.width,c.height);
+    // scale
+    const w=c.clientWidth, h=c.clientHeight;
+    c.width=w; c.height=h;
+    const maxCount=Math.max(5, ...rows.map(r=>r.online_count));
+    const maxLat=Math.max(50, ...rows.map(r=>r.rcon_latency_ms||0));
+    function x(i){return (i/(Math.max(1,rows.length-1)))* (w-16) + 8}
+    function yCount(v){return h-12 - (v/maxCount)*(h-24)}
+    function yLat(v){return h-12 - (v/maxLat)*(h-24)}
+    // axes
+    ctx.strokeStyle='#203055'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(8,8); ctx.lineTo(8,h-12); ctx.lineTo(w-8,h-12); ctx.stroke();
+    // players line
+    ctx.strokeStyle='#2a66ff'; ctx.beginPath();
+    rows.forEach((r,i)=>{const X=x(i), Y=yCount(r.online_count); i?ctx.lineTo(X,Y):ctx.moveTo(X,Y);});
+    ctx.stroke();
+    // latency line
+    ctx.strokeStyle='#39ff14'; ctx.beginPath();
+    rows.forEach((r,i)=>{const X=x(i), Y=yLat(r.rcon_latency_ms||0); i?ctx.lineTo(X,Y):ctx.moveTo(X,Y);});
+    ctx.stroke();
+    ctx.fillStyle='#9db0cc'; ctx.fillText('players', 14, 16);
+    ctx.fillStyle='#9db0cc'; ctx.fillText('latency(ms)', 80, 16);
+  }catch{}
 }
-setInterval(drawPerf, 60000); drawPerf();
+
+async function tick(){try{await refreshStatus();}catch{}try{await refreshOnline();}catch{}try{await refreshPlayers();}catch{}drawPerf();}
+setInterval(tick,2000); tick();
+refreshBans().catch(()=>{});refreshBanPresets().catch(()=>{});refreshBcPresets().catch(()=>{});refreshSchedules().catch(()=>{});
 </script>
 </body>
 </html>
