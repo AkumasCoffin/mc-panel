@@ -1,14 +1,22 @@
-// rcon.js - tiny RCON wrapper
-const { Rcon } = require('rcon-client');
+// rcon.js - RCON wrapper; gracefully disabled if not configured
 const path = require('path');
-require('dotenv').config({ path: path.join(__dirname, '.env') });
+try { require('dotenv').config({ path: path.join(__dirname, '.env') }); } catch {}
 
-const RCON_HOST = process.env.RCON_HOST || '127.0.0.1';
-const RCON_PORT = Number(process.env.RCON_PORT || 25575);
-const RCON_PASSWORD = process.env.RCON_PASSWORD || '';
+function rconEnabled() {
+  const pass = process.env.RCON_PASSWORD || process.env.RCON_PASS || '';
+  return !!pass;
+}
 
 async function sendRconCommand(cmd) {
-  const r = await Rcon.connect({ host: RCON_HOST, port: RCON_PORT, password: RCON_PASSWORD });
+  const pass = process.env.RCON_PASSWORD || process.env.RCON_PASS || '';
+  if (!pass) throw new Error('RCON not configured');
+
+  const host = process.env.RCON_HOST || '127.0.0.1';
+  const port = Number(process.env.RCON_PORT || 25575);
+
+  // lazy-load to avoid requiring if disabled
+  const { Rcon } = require('rcon-client');
+  const r = await Rcon.connect({ host, port, password: pass });
   try {
     return await r.send(cmd);
   } finally {
@@ -16,4 +24,4 @@ async function sendRconCommand(cmd) {
   }
 }
 
-module.exports = { sendRconCommand };
+module.exports = { sendRconCommand, rconEnabled };
