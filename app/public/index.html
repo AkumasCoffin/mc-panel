@@ -5,63 +5,287 @@
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Minecraft RCON Panel</title>
 <style>
-  :root{--bg:#0b0f14;--card:#111a2d;--stroke:#1e2a46;--text:#e9f0ff;--muted:#9db0cc;--accent:#2a66ff;--danger:#ff4d57}
-  *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,Segoe UI,Roboto,Ubuntu}
-  .wrap{max-width:900px;margin:24px auto;padding:0 16px}
-  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
-  .card{background:var(--card);border:1px solid var(--stroke);border-radius:12px;padding:12px}
-  h1{font-size:18px;margin:0 0 10px} h2{font-size:16px;margin:0 0 8px} pre{white-space:pre-wrap}
-  .btn{background:var(--accent);color:#fff;border:none;border-radius:8px;padding:8px 10px;cursor:pointer}
-  input{width:100%;padding:8px;border-radius:8px;background:#0c1322;border:1px solid var(--stroke);color:#e6f1ff;margin:6px 0}
-  .small{color:var(--muted)}
+:root{
+  --bg:#0b0f14;--panel:#0f1524;--card:#111a2d;--stroke:#1e2a46;--text:#e9f0ff;--muted:#9db0cc;
+  --accent:#2a66ff;--danger:#ff4d57;--ok:#2ecc71
+}
+*{box-sizing:border-box}html,body{height:100%}
+body{margin:0;background:linear-gradient(180deg,#0b0f14,#0c1220 60%,#0a0f1a);color:var(--text);font:14px/1.5 system-ui,Segoe UI,Roboto,Ubuntu}
+.sidebar{position:fixed;inset:0 auto 0 0;width:260px;background:linear-gradient(180deg,#0f1524,#0b1020);border-right:1px solid var(--stroke);padding:18px}
+.brand{display:flex;gap:10px;align-items:center;margin-bottom:16px}
+.logo{width:28px;height:28px;border-radius:6px;background:radial-gradient(circle at 30% 30%, #48ff48, #146614)}
+.brand h1{font-size:16px;margin:0;color:#cfe2ff}
+.nav a{display:block;padding:10px 12px;border-radius:10px;color:#cbd5e0;text-decoration:none;margin:5px 0;border:1px solid transparent;cursor:pointer}
+.nav a.active,.nav a:hover{background:#14203a;border-color:#21325a}
+.main{margin-left:260px;min-height:100%;padding:18px}
+.header{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
+.card{background:var(--card);border:1px solid var(--stroke);border-radius:14px;padding:14px;box-shadow:0 8px 24px rgba(0,0,0,.25)}
+h2{margin:0 0 8px 0;font-size:18px}
+h3{margin:0 0 8px 0;font-size:15px;color:#cfe2ff}
+.small{color:var(--muted);font-size:12px}
+input,textarea,select{width:100%;padding:10px;border-radius:10px;background:#0e1628;border:1px solid var(--stroke);color:#e6f1ff;margin:6px 0}
+textarea{min-height:86px;resize:vertical}
+.btn{background:var(--accent);color:#fff;border:none;border-radius:10px;padding:9px 12px;cursor:pointer}
+.btn.ghost{background:transparent;border:1px solid var(--stroke)}
+.btn.danger{background:var(--danger)}
+.btn.ok{background:var(--ok)}
+table{width:100%;border-collapse:collapse}
+th,td{padding:8px;border-bottom:1px solid #1a2540}th{color:#a9bbd9;text-align:left;font-weight:600}
+pre{white-space:pre-wrap;background:#0c1426;padding:10px;border-radius:10px}
+.toast{position:fixed;right:16px;bottom:16px;background:#0f172a;border:1px solid #213358;padding:10px 12px;border-radius:10px;display:none}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;padding:16px}
+.win{background:#0f172a;border:1px solid #223355;border-radius:12px;max-width:900px;width:100%;max-height:85vh;overflow:auto;padding:16px}
+.tag{display:inline-block;border:1px solid #2753a6;color:#cfe2ff;background:#0f1c39;border-radius:999px;padding:2px 8px;font-size:12px}
 </style>
 </head>
 <body>
-<div class="wrap">
-  <h1>MC RCON Panel</h1>
-  <div class="grid">
-    <div class="card">
-      <h2>Status</h2>
-      <div>Server: <b id="status">—</b></div>
-      <div>Players: <b id="pcount">—</b></div>
-      <div>Next restart: <span id="next">None</span></div>
+<div class="sidebar">
+  <div class="brand"><div class="logo"></div><h1>MC RCON Panel</h1></div>
+  <div class="nav">
+    <a data-page="dash" class="active">🏠 Dashboard</a>
+    <a data-page="players">👥 Players</a>
+    <a data-page="bans">🚫 Bans</a>
+    <a data-page="rest">⏱️ Restarts</a>
+    <a data-page="cmd">⌨️ Commands</a>
+    <a data-page="bc">📣 Broadcasts</a>
+  </div>
+</div>
+
+<div class="main">
+  <!-- Dashboard -->
+  <div id="page-dash" class="page">
+    <div class="header">
+      <h2>Dashboard</h2>
+      <button id="btn-emerg" class="btn danger">Emergency Restart</button>
+    </div>
+    <div class="cards">
+      <div class="card">
+        <h3>Status</h3>
+        <div>Server: <b id="status">—</b></div>
+        <div>Players: <b id="pcount">—</b></div>
+        <div>Next restart: <span id="next">None</span> <span id="nextRel" class="small"></span></div>
+      </div>
+      <div class="card"><h3>Recent Online</h3><pre id="recent" class="small">—</pre></div>
+      <div class="card">
+        <h3>Quick Broadcast</h3>
+        <input id="bcText" placeholder="Server restarting soon…"/>
+        <div><button id="bcSend" class="btn ok">Send</button></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Players -->
+  <div id="page-players" class="page" style="display:none">
+    <div class="header"><h2>Players</h2>
+      <input id="psearch" placeholder="Search username/IP"/>
     </div>
     <div class="card">
-      <h2>Online</h2>
-      <pre id="online">—</pre>
+      <table id="ptbl">
+        <thead><tr><th>Username</th><th>UUID</th><th>Latest IP</th><th>First</th><th>Last</th><th>Playtime</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
     </div>
+  </div>
+
+  <!-- Bans -->
+  <div id="page-bans" class="page" style="display:none">
+    <div class="header"><h2>Bans</h2></div>
+    <div class="card"><pre class="small" id="bans">—</pre></div>
+  </div>
+
+  <!-- Restarts -->
+  <div id="page-rest" class="page" style="display:none">
+    <div class="header"><h2>Scheduled Restarts</h2></div>
+    <div class="card"><pre class="small">Configure once schedules API is available.</pre></div>
+  </div>
+
+  <!-- Commands -->
+  <div id="page-cmd" class="page" style="display:none">
+    <div class="header"><h2>Commands</h2></div>
+    <div class="card"><input id="cmd" placeholder='say Hello from panel'/> <button id="send" class="btn">Run</button> <pre id="cout"></pre></div>
+  </div>
+
+  <!-- Broadcasts -->
+  <div id="page-bc" class="page" style="display:none">
+    <div class="header"><h2>Broadcasts</h2></div>
     <div class="card">
-      <h2>Command</h2>
-      <input id="cmd" placeholder="say Hello from web"/>
-      <button id="run" class="btn">Run</button>
-      <pre id="out" class="small">—</pre>
+      <input id="bcText2" placeholder="Your broadcast message"/>
+      <button id="bcSend2" class="btn ok">Send Broadcast</button>
     </div>
   </div>
 </div>
+
+<!-- Modal + Toast -->
+<div id="modal" class="modal"><div class="win"><div id="modal-body"></div><div style="text-align:right;margin-top:8px"><button id="modal-close" class="btn ghost">Close</button></div></div></div>
+<div id="toast" class="toast"></div>
+
 <script>
-async function api(p,o){const r=await fetch(p,{credentials:'include',headers:{'Content-Type':'application/json'},...o});if(!r.ok)throw new Error(await r.text());return r.json();}
-async function refresh(){
-  try{
-    const st=await api('/api/status');
-    document.getElementById('status').textContent=st.online?'Online':'Offline';
-    document.getElementById('pcount').textContent=st.player_count ?? '0';
-  }catch{document.getElementById('status').textContent='Offline';document.getElementById('pcount').textContent='0';}
-  try{
-    const on=await api('/api/online');
-    const lines=(on.players||[]).map(p=>`${p.username}${p.uuid?` (${p.uuid})`:''}`);
-    document.getElementById('online').textContent=lines.join('\n')||'—';
-  }catch{document.getElementById('online').textContent='—';}
+/* ----- Basic UI helpers ----- */
+const pages=['dash','players','bans','rest','cmd','bc'];
+document.querySelectorAll('.nav a').forEach(a=>{
+  a.onclick=(e)=>{
+    e.preventDefault();
+    pages.forEach(p=>document.getElementById('page-'+p).style.display='none');
+    document.querySelectorAll('.nav a').forEach(x=>x.classList.remove('active'));
+    a.classList.add('active');
+    document.getElementById('page-'+a.dataset.page).style.display='block';
+  };
+});
+
+function toast(t){const el=document.getElementById('toast');el.textContent=t;el.style.display='block';setTimeout(()=>el.style.display='none',1600);}
+function fmtDur(s){s=Number(s||0);const d=Math.floor(s/86400);s%=86400;const h=Math.floor(s/3600);s%=3600;const m=Math.floor(s/60);return (d?d+'d ':'')+h+'h '+m+'m';}
+function showModal(html){const m=document.getElementById('modal');document.getElementById('modal-body').innerHTML=html;m.style.display='flex';}
+document.getElementById('modal-close').onclick=()=>{document.getElementById('modal').style.display='none';};
+
+/* ----- API helper (Basic Auth is handled by browser prompt) ----- */
+async function api(path, options){
+  const r = await fetch(path, {
+    credentials: 'include',
+    headers: {'Content-Type':'application/json'},
+    ...options
+  });
+  if(!r.ok){
+    // Surface auth errors nicely on the UI
+    if(r.status===401){ throw new Error('401 Unauthorized: please log in'); }
+    throw new Error(await r.text());
+  }
+  // Some endpoints may return non-JSON (e.g., plain text); try JSON first
+  const text = await r.text();
+  try { return JSON.parse(text); } catch { return text; }
 }
-document.getElementById('run').onclick=async()=>{
-  const c=document.getElementById('cmd').value.trim();
-  if(!c)return;
+
+/* ----- Dashboard ----- */
+async function refreshStatus(){
   try{
-    const r=await api('/api/command',{method:'POST',body:JSON.stringify({command:c})});
-    document.getElementById('out').textContent=r.out||JSON.stringify(r);
-  }catch(e){document.getElementById('out').textContent=String(e);}
+    const st = await api('/api/status'); // expects {online, next_restart_iso?, next_restart_seconds?}
+    document.getElementById('status').textContent = st.online ? 'Online' : 'Offline';
+    document.getElementById('next').textContent = st.next_restart_iso ? new Date(st.next_restart_iso).toLocaleString() : 'None';
+    const s = Number(st.next_restart_seconds ?? NaN);
+    document.getElementById('nextRel').textContent = Number.isFinite(s) ? ` (in ${Math.floor(s/60)}m ${s%60}s)` : '';
+  }catch(e){
+    document.getElementById('status').textContent = '—';
+    document.getElementById('next').textContent = 'None';
+    document.getElementById('nextRel').textContent = '';
+  }
+}
+
+async function refreshOnline(){
+  try{
+    const on = await api('/api/online'); // expects {players:[{username,uuid?}], count}
+    const names = Array.isArray(on.players) ? on.players.map(p=>p.username||'').filter(Boolean) : [];
+    document.getElementById('pcount').textContent = (on.count!=null) ? on.count : names.length || '—';
+    document.getElementById('recent').textContent = names.length ? names.join('\n') : '—';
+  }catch{
+    document.getElementById('pcount').textContent = '—';
+    document.getElementById('recent').textContent = '—';
+  }
+}
+
+/* ----- Players (uses /api/players if available; else derives from /api/online) ----- */
+async function refreshPlayers(){
+  let rows = [];
+  try{
+    const ps = await api('/api/players'); // [{id,username,uuid,last_ip,first_seen,last_seen,total_playtime}]
+    if(Array.isArray(ps)) rows = ps;
+  }catch{
+    // fallback: derive a simple list by name from /api/online
+    try{
+      const on = await api('/api/online');
+      rows = (on.players||[]).map((p,i)=>({id:i+1,username:p.username,uuid:p.uuid||'',last_ip:'',first_seen:'',last_seen:'',total_playtime:0}));
+    }catch{}
+  }
+
+  const q=(document.getElementById('psearch').value||'').toLowerCase();
+  const tb=document.querySelector('#ptbl tbody');
+  tb.innerHTML = (rows||[])
+    .filter(p=>!q || (p.username||'').toLowerCase().includes(q) || (p.last_ip||'').includes(q))
+    .map(p=>`<tr>
+      <td>${p.username||''}</td>
+      <td class="small">${p.uuid||''}</td>
+      <td>${p.last_ip||''}</td>
+      <td class="small">${p.first_seen||''}</td>
+      <td class="small">${p.last_seen||''}</td>
+      <td>${fmtDur(p.total_playtime||0)}</td>
+      <td><button class="btn ghost" data-id="${p.id||''}" data-username="${p.username||''}">View</button></td>
+    </tr>`).join('') || `<tr><td colspan="7" class="small">No players.</td></tr>`;
+}
+document.getElementById('psearch').addEventListener('input', refreshPlayers);
+
+document.getElementById('ptbl').onclick=async(e)=>{
+  if(!(e.target instanceof HTMLElement)) return;
+  if(!e.target.matches('button[data-id]')) return;
+  const id=e.target.getAttribute('data-id');
+  const uname=e.target.getAttribute('data-username')||'';
+  // Try /api/player/:id first
+  try{
+    const d = await api('/api/player/'+id);
+    const p = d.player || {};
+    const ips = (d.ips||[]).map(x=>`<li>${x.ip} <span class="small">${x.seen_at||''}</span></li>`).join('') || '<li class="small">No IPs logged.</li>';
+    const sessions = (d.sessions||[]).map(s=>`<li>${s.login_time} → ${s.logout_time||'(active)'} <span class="small">${s.duration?fmtDur(s.duration):''}</span></li>`).join('') || '<li class="small">No sessions.</li>';
+    const cmds = (d.commands||[]).map(c=>`<li>${c.executed_at||''}: <code>${String(c.command||'').replace(/</g,'&lt;')}</code></li>`).join('') || '<li class="small">No commands logged.</li>';
+    const lines=[];
+    lines.push(`<h3>${p.username||uname} ${p.uuid?`<span class="tag">${p.uuid}</span>`:''}</h3>`);
+    lines.push(`<div class="small">Latest IP: ${p.last_ip||'-'} · First: ${p.first_seen||'-'} · Last: ${p.last_seen||'-'} · Playtime: ${fmtDur(p.total_playtime||0)}</div>`);
+    lines.push('<h4>IPs</h4><ul>'+ips+'</ul>');
+    lines.push('<h4>Sessions</h4><ul>'+sessions+'</ul>');
+    lines.push('<h4>Commands</h4><ul>'+cmds+'</ul>');
+    showModal(lines.join(''));
+  }catch{
+    showModal(`<h3>${uname||('Player #'+id)}</h3><div class="small">No detail endpoint available.</div>`);
+  }
 };
-setInterval(refresh, 3000);
-refresh();
+
+/* ----- Bans (best-effort; will just show raw JSON if your /api/bans exists) ----- */
+async function refreshBans(){
+  try{
+    const b = await api('/api/bans');
+    document.getElementById('bans').textContent = typeof b==='string' ? b : JSON.stringify(b,null,2);
+  }catch{
+    document.getElementById('bans').textContent = '—';
+  }
+}
+
+/* ----- Commands & Broadcasts ----- */
+document.getElementById('send').onclick=async()=>{
+  const c=document.getElementById('cmd').value.trim();
+  if(!c) return;
+  try{
+    const out=await api('/api/command',{method:'POST',body:JSON.stringify({command:c})});
+    document.getElementById('cout').textContent=typeof out==='string'?out:(out.out||JSON.stringify(out));
+  }catch(e){
+    document.getElementById('cout').textContent=String(e);
+  }
+};
+
+document.getElementById('bcSend').onclick=async()=>{
+  const message=document.getElementById('bcText').value.trim();
+  if(!message) return;
+  try{
+    const out=await api('/api/command',{method:'POST',body:JSON.stringify({command:`say ${message.replace(/"/g,'\\"')}`})});
+    toast('Broadcast sent');
+  }catch{ toast('Failed'); }
+};
+document.getElementById('bcSend2').onclick=()=>document.getElementById('bcSend').click();
+
+/* ----- Emergency restart (requires /api/restart-now on server) ----- */
+document.getElementById('btn-emerg').onclick=async()=>{
+  if(!confirm('Emergency restart now?'))return;
+  try{
+    await api('/api/restart-now',{method:'POST'});
+    toast('Restart sent');
+  }catch{ toast('Failed'); }
+};
+
+/* ----- Polling ----- */
+async function tick(){
+  await refreshStatus();
+  await refreshOnline();
+  await refreshPlayers();
+  await refreshBans();
+}
+setInterval(tick, 3000);
+tick();
 </script>
 </body>
 </html>
