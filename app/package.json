@@ -1,22 +1,23 @@
 {
   "name": "mc-rcon-webgui",
-  "version": "1.2.0",
-  "private": true,
-  "description": "Minecraft RCON WebGUI (dark, modern, single-file frontend)",
+  "version": "1.0.0",
+  "description": "Minecraft RCON WebGUI",
   "main": "server.js",
-  "type": "commonjs",
-  "engines": {
-    "node": ">=18"
-  },
   "scripts": {
     "start": "node server.js"
   },
+  "author": "AkumasCoffin",
+  "license": "MIT",
   "dependencies": {
     "basic-auth": "^2.0.1",
-    "cron-parser": "^5.0.4",
-    "express": "^4.19.2",
+    "body-parser": "^1.20.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.18.2",
+    "morgan": "^1.10.0",
     "node-cron": "^3.0.3",
-    "rcon-client": "^4.2.5",
-    "sqlite3": "^5.1.7"
+    "rcon-client": "^4.2.4",
+    "sqlite3": "^5.1.6",
+    "ws": "^8.17.0"
   }
 }
