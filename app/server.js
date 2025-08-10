@@ -9,7 +9,6 @@ const { spawn, execFile } = require('child_process');
 const cron = require('node-cron');
 const cronParser = require('cron-parser');
 
-// Load .env if present
 try { require('dotenv').config({ path: path.join(__dirname, '.env') }); } catch {}
 
 const { db, run, get, all, initSchema } = require('./db');
@@ -50,9 +49,18 @@ function basicAuth(req, res, next) {
   return res.status(401).send('Authentication required.');
 }
 
-// Static UI
+// Static UI (no-store for index.html so proxies don’t cache old shell)
 const PUBLIC_DIR = path.join(__dirname, 'public');
-app.use(express.static(PUBLIC_DIR, { index: false }));
+app.use(express.static(PUBLIC_DIR, {
+  index: false,
+  setHeaders(res, filePath) {
+    if (filePath.endsWith('index.html')) {
+      res.setHeader('Cache-Control', 'no-store');
+    } else {
+      res.setHeader('Cache-Control', 'public, max-age=300');
+    }
+  }
+}));
 
 // ---------- In-memory live state via log tail ----------
 const playersByName = new Map(); // name -> record
@@ -255,7 +263,7 @@ app.get('/api/player/:id', basicAuth, async (req, res) => {
   }, ips, sessions, commands });
 });
 
-// Commands (RCON if enabled; else list emu)
+// Commands
 app.post('/api/command', basicAuth, async (req, res) => {
   const cmd = String((req.body && req.body.command) || '').trim();
   await audit('panel_command', { cmd, from: req.ip, at: new Date().toISOString() });
@@ -308,7 +316,7 @@ app.get('/api/bans', basicAuth, (req, res) => {
   res.json({ players, ips });
 });
 
-// Presets (Broadcast + Ban reasons)
+// Presets
 app.get('/api/broadcast-presets', basicAuth, async (req, res) => {
   const rows = await all('SELECT id,label,message FROM broadcast_presets ORDER BY id DESC'); res.json(rows);
 });
@@ -408,19 +416,21 @@ app.get('/api/audit', basicAuth, async (req, res) => {
 });
 
 // Health
-app.get('/api/health', (req, res) => res.json({ ok: true }));
+app.get('/health', (req, res) => res.json({ ok: true }));
 
-// Fallback -> UI
+// Fallback -> UI (also mark no-store for index shell)
 app.get('*', (req, res) => {
   const indexPath = path.join(PUBLIC_DIR, 'index.html');
-  if (fs.existsSync(indexPath)) return res.sendFile(indexPath);
+  if (fs.existsSync(indexPath)) {
+    res.set('Cache-Control', 'no-store');
+    return res.sendFile(indexPath);
+  }
   res.status(500).send('UI file not found. Place index.html in app/public.');
 });
 
 // ---------- START ----------
 (async () => {
   await initSchema();
-  // DB + log importer (historical + tail)
   await importer.start({ mcPath: MC_SERVER_PATH }).catch(()=>{});
   await refreshSchedulesFromDb();
   http.createServer(app).listen(PORT, HOST, () => console.log(`Panel on http://${HOST}:${PORT}`));
