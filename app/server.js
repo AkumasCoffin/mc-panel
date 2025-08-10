@@ -1,315 +1,280 @@
 // app/server.js
-// MC RCON Panel — using npm "rcon" (event-based) with a promise wrapper.
+// MC RCON Panel - minimal, stable server with working endpoints.
+// Uses `rcon` (npm) instead of rcon-client to avoid version resolution issues.
 
-require('dotenv').config(); // harmless if no .env
+'use strict';
+
+/* -------------------- Optional .env -------------------- */
+try {
+  // Don't crash if dotenv isn't installed; just skip.
+  require('dotenv').config();
+} catch {}
+
+/* -------------------- Imports -------------------- */
 const path = require('path');
 const fs = require('fs');
 const express = require('express');
-const basicAuth = require('basic-auth');
-const Rcon = require('rcon'); // <-- npm i rcon
+const basicAuth = require('express-basic-auth');
+const Rcon = require('rcon');               // <-- stable, widely available
+const Database = require('better-sqlite3'); // used; ok if db doesn't have all tables
+const morgan = require('morgan');
 
-const app = express();
-
-// ---------- Config ----------
+/* -------------------- Env -------------------- */
 const PANEL_USER = process.env.PANEL_USER || 'admin';
 const PANEL_PASS = process.env.PANEL_PASS || 'changeme';
 
 const RCON_HOST = process.env.RCON_HOST || '127.0.0.1';
 const RCON_PORT = Number(process.env.RCON_PORT || 25575);
 const RCON_PASS = process.env.RCON_PASS || '';
-const RCON_TCP  = process.env.RCON_TCP === '1' ? true : false; // some servers require TCP mode
-const RCON_TIMEOUT_MS = Number(process.env.RCON_TIMEOUT_MS || 4000);
-const RCON_IDLE_CLOSE_MS = Number(process.env.RCON_IDLE_CLOSE_MS || 5000);
+const RCON_TIMEOUT_MS = Number(process.env.RCON_TIMEOUT_MS || 5000);
 
 const HOST = process.env.HOST || '0.0.0.0';
 const PORT = Number(process.env.PORT || 8080);
 
-// UI folder (serve /app/public/index.html)
-const PUBLIC_DIR = path.join(__dirname, 'public');
-const INDEX_HTML = path.join(PUBLIC_DIR, 'index.html');
+const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'webgui.sqlite');
+const SERVER_LOG = process.env.SERVER_LOG || ''; // optional: /opt/minecraft/server/logs/latest.log
 
-app.use(express.json());
+/* -------------------- App -------------------- */
+const app = express();
+app.disable('x-powered-by');
+app.use(express.json({ limit: '1mb' }));
+app.use(morgan('tiny'));
 
-// ---------- Basic Auth (API only) ----------
-function requireAuth(req, res, next) {
-  const cred = basicAuth(req);
-  if (!cred || cred.name !== PANEL_USER || cred.pass !== PANEL_PASS) {
-    res.set('WWW-Authenticate', 'Basic realm="panel"');
-    return res.status(401).send('Authentication required.');
-  }
-  next();
+/* -------------------- Auth -------------------- */
+app.use(
+  basicAuth({
+    challenge: true,
+    realm: 'panel',
+    users: { [PANEL_USER]: PANEL_PASS },
+  })
+);
+
+/* -------------------- DB (safe open) -------------------- */
+let db;
+try {
+  db = new Database(DB_PATH);
+  // Create minimal tables if missing (won’t hurt if they already exist)
+  db.exec(`
+    PRAGMA foreign_keys=ON;
+    CREATE TABLE IF NOT EXISTS players(
+      id INTEGER PRIMARY KEY,
+      username TEXT UNIQUE,
+      uuid TEXT,
+      first_seen TEXT,
+      last_seen TEXT,
+      total_playtime INTEGER DEFAULT 0,
+      last_ip TEXT
+    );
+    CREATE TABLE IF NOT EXISTS sessions(
+      id INTEGER PRIMARY KEY,
+      player_id INTEGER,
+      login_time TEXT,
+      logout_time TEXT,
+      duration INTEGER,
+      FOREIGN KEY(player_id) REFERENCES players(id)
+    );
+    CREATE TABLE IF NOT EXISTS commands(
+      id INTEGER PRIMARY KEY,
+      player_id INTEGER,
+      executed_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      command TEXT,
+      FOREIGN KEY(player_id) REFERENCES players(id)
+    );
+  `);
+} catch (e) {
+  console.warn('[db] open failed, continuing without DB:', e.message);
+  db = null;
 }
 
-// ---------- RCON connection mgmt (event-based -> promise) ----------
-let rcon = null;
-let connected = false;
-let busy = false;
-let lastUse = 0;
-let idleTimer = null;
-
-function newRcon() {
-  const opts = { tcp: RCON_TCP, challenge: true };
-  const c = new Rcon(RCON_HOST, RCON_PORT, RCON_PASS, opts);
-  c.on('end', () => { connected = false; });
-  c.on('error', () => { connected = false; });
-  return c;
-}
-
-function connectRcon() {
+/* -------------------- RCON helper -------------------- */
+function rconQuery(command, timeoutMs = RCON_TIMEOUT_MS) {
   return new Promise((resolve, reject) => {
-    const c = newRcon();
-    let done = false;
-
-    const to = setTimeout(() => {
-      if (done) return;
-      done = true;
-      try { c.disconnect(); } catch {}
-      reject(new Error('RCON connect timeout'));
-    }, RCON_TIMEOUT_MS);
-
-    c.on('auth', () => {
-      if (done) return;
-      clearTimeout(to);
-      done = true;
-      rcon = c;
-      connected = true;
-      lastUse = Date.now();
-      scheduleIdleClose();
-      resolve();
-    });
-
-    c.on('error', (e) => {
-      if (done) return;
-      clearTimeout(to);
-      done = true;
-      try { c.disconnect(); } catch {}
-      reject(e instanceof Error ? e : new Error(String(e)));
-    });
-
-    c.connect();
-  });
-}
-
-function scheduleIdleClose() {
-  if (idleTimer) clearTimeout(idleTimer);
-  idleTimer = setTimeout(() => {
-    if (rcon && connected && Date.now() - lastUse >= RCON_IDLE_CLOSE_MS) {
-      try { rcon.disconnect(); } catch {}
-      rcon = null;
-      connected = false;
-    }
-  }, RCON_IDLE_CLOSE_MS + 250);
-}
-
-async function ensureRcon() {
-  if (rcon && connected) return;
-  await connectRcon();
-}
-
-function rconSendOnce(cmd) {
-  // Wrap a single request/response
-  return new Promise(async (resolve, reject) => {
-    try {
-      await ensureRcon();
-    } catch (e) {
-      return reject(e);
-    }
-
-    let completed = false;
-    const onResponse = (str) => {
-      if (completed) return;
-      completed = true;
-      cleanup();
-      lastUse = Date.now();
-      scheduleIdleClose();
-      resolve(String(str || ''));
-    };
-    const onError = (e) => {
-      if (completed) return;
-      completed = true;
-      cleanup();
-      reject(e instanceof Error ? e : new Error(String(e)));
-    };
-    const onEnd = () => {
-      if (completed) return;
-      completed = true;
-      cleanup();
-      reject(new Error('RCON connection ended'));
-    };
-
-    function cleanup() {
-      if (!rcon) return;
-      rcon.removeListener('response', onResponse);
-      rcon.removeListener('error', onError);
-      rcon.removeListener('end', onEnd);
-    }
-
-    // one-time listeners for this request
-    rcon.once('response', onResponse);
-    rcon.once('error', onError);
-    rcon.once('end', onEnd);
-
-    // timeout guard
+    const client = new Rcon(RCON_HOST, RCON_PORT, RCON_PASS, { tcp: true, challenge: false });
+    let settled = false;
     const t = setTimeout(() => {
-      if (completed) return;
-      completed = true;
-      cleanup();
-      try { rcon.disconnect(); } catch {}
-      rcon = null; connected = false;
-      reject(new Error('RCON command timeout'));
-    }, RCON_TIMEOUT_MS + 500);
+      if (settled) return;
+      settled = true;
+      try { client.disconnect(); } catch {}
+      reject(new Error('RCON connect timeout'));
+    }, timeoutMs);
 
-    // send
-    try {
-      rcon.send(cmd);
-    } catch (e) {
+    client.on('auth', () => {
+      client.send(command);
+    });
+
+    client.on('response', (str) => {
+      if (settled) return;
+      settled = true;
       clearTimeout(t);
-      cleanup();
-      return reject(e);
+      try { client.disconnect(); } catch {}
+      resolve(String(str || ''));
+    });
+
+    client.on('error', (err) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(t);
+      try { client.disconnect(); } catch {}
+      reject(err);
+    });
+
+    client.on('end', () => {
+      // if end occurs before response, let timeout or error handle it
+    });
+
+    try {
+      client.connect();
+    } catch (err) {
+      clearTimeout(t);
+      reject(err);
     }
   });
 }
 
-async function rconQuery(cmd) {
-  while (busy) {
-    await new Promise(r => setTimeout(r, 15));
+/* -------------------- Parse helpers -------------------- */
+function parseListOutput(out) {
+  // Examples:
+  // "There are 2 of a max of 50 players online: Alice, Bob"
+  // "There are 0 of a max of 50 players online"
+  const line = String(out || '').trim();
+  const m = line.match(/There are\s+(\d+)\s+of\s+a\s+max\s+of\s+\d+\s+players\s+online(?::\s*(.*))?/i);
+  if (!m) {
+    // Modded/other: try another loose pattern
+    const names = (line.split(':')[1] || '').trim();
+    const arr = names ? names.split(',').map(s => s.trim()).filter(Boolean) : [];
+    return { count: arr.length, players: arr.map(n => ({ username: n, uuid: null })) };
   }
-  busy = true;
-  try {
-    const out = await rconSendOnce(cmd);
-    return out;
-  } finally {
-    busy = false;
-  }
+  const count = Number(m[1] || 0);
+  const tail = (m[2] || '').trim();
+  const players = tail
+    ? tail.split(',').map(s => s.trim()).filter(Boolean).map(n => ({ username: n, uuid: null }))
+    : [];
+  return { count, players };
 }
 
-// ---------- Helpers ----------
-function parseList(raw) {
-  // Typical output:
-  // "There are 2 of a max of 50 players online: name1, name2"
-  const out = { count: 0, players: [] };
-  if (!raw) return out;
-
-  const m = raw.match(/There are\s+(\d+)\s+of/i);
-  if (m) out.count = Number(m[1] || 0);
-
-  const parts = raw.split('players online:');
-  if (parts.length > 1) {
-    const names = parts[1].trim();
-    if (names) {
-      names
-        .split(',')
-        .map(s => s.trim())
-        .filter(Boolean)
-        .forEach(n => out.players.push({ username: n }));
-    }
+function cleanBanLine(s) {
+  // "64.135.139.241 was banned by Server: Banned by an operator."
+  // "Name was banned by X: reason"
+  const txt = String(s || '').trim();
+  const mm = txt.match(/^(.+?)\s+was banned by\s+([^:]+):\s*(.*)$/i);
+  if (mm) {
+    return { target: mm[1].trim(), by: mm[2].trim(), reason: mm[3].trim(), banned_at: null };
   }
-  return out;
+  // Fallback: just return as one field
+  return { target: txt, by: 'Server', reason: '', banned_at: null };
 }
 
-// ---------- API (authenticated) ----------
-const api = express.Router();
-api.use(requireAuth);
+/* -------------------- API -------------------- */
 
-api.get('/status', async (req, res) => {
+// Health/status (derived from list)
+app.get('/api/status', async (req, res) => {
   try {
-    let online = false;
-    try {
-      const raw = await rconQuery('list');
-      online = raw && raw.toLowerCase().includes('players online');
-    } catch (_) { online = false; }
-    res.json({ online, next_restart_iso: null, next_restart_seconds: null });
-  } catch (e) {
-    res.status(500).json({ error: e.message || String(e) });
+    const out = await rconQuery('list');
+    const parsed = parseListOutput(out);
+    res.json({
+      online: true,
+      player_count: parsed.count,
+      next_restart_iso: null,
+      next_restart_seconds: null,
+    });
+  } catch {
+    res.json({ online: false, player_count: 0, next_restart_iso: null, next_restart_seconds: null });
   }
 });
 
-api.get('/online', async (_req, res) => {
+// Online now (names)
+app.get('/api/online', async (req, res) => {
   try {
-    const raw = await rconQuery('list');
-    const parsed = parseList(raw);
-    res.json(parsed);
+    const out = await rconQuery('list');
+    const parsed = parseListOutput(out);
+    res.json({ players: parsed.players, count: parsed.count });
   } catch (e) {
-    res.status(500).json({ error: e.message || String(e) });
+    res.status(200).json({ players: [], count: 0 });
   }
 });
 
-api.post('/command', async (req, res) => {
+// Run arbitrary command
+app.post('/api/command', async (req, res) => {
+  const command = (req.body && String(req.body.command || '')).trim();
+  if (!command) return res.status(400).json({ ok: false, error: 'Missing command' });
   try {
-    const { command } = req.body || {};
-    if (!command || typeof command !== 'string') {
-      return res.status(400).json({ ok: false, error: 'Missing command' });
-    }
     const out = await rconQuery(command);
+    // Optional: store into DB.commands
+    if (db) {
+      try {
+        db.prepare('INSERT INTO commands(command) VALUES(?)').run(command);
+      } catch {}
+    }
     res.json({ ok: true, out });
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message || String(e) });
   }
 });
 
-// Players list: derived from live "list" (DB optional)
-api.get('/players', async (_req, res) => {
+// Players table (DB or lightweight fallback)
+app.get('/api/players', (req, res) => {
+  if (db) {
+    try {
+      const rows = db.prepare(`
+        SELECT id, username, uuid, first_seen, last_seen, total_playtime, last_ip
+        FROM players
+        ORDER BY COALESCE(last_seen, '1970-01-01') DESC
+      `).all();
+      return res.json(rows);
+    } catch {}
+  }
+  // fallback: empty list so UI doesn’t crash
+  res.json([]);
+});
+
+// One player detail
+app.get('/api/player/:id', (req, res) => {
+  const id = Number(req.params.id);
+  if (!db) return res.json({ player: null, ips: [], sessions: [], commands: [] });
   try {
-    const raw = await rconQuery('list');
-    const parsed = parseList(raw);
-    const rows = parsed.players.map((p, i) => ({
-      id: i + 1,
-      username: p.username,
-      uuid: null,
-      first_seen: null,
-      last_seen: null,
-      total_playtime: 0,
-      last_ip: null
-    }));
-    res.json(rows);
+    const player = db.prepare(`SELECT * FROM players WHERE id=?`).get(id) || null;
+    const ips = db.prepare(`SELECT ip, seen_at FROM player_ips WHERE player_id=? ORDER BY seen_at DESC`).all(id) || [];
+    const sessions = db.prepare(`SELECT login_time, logout_time, duration FROM sessions WHERE player_id=? ORDER BY login_time DESC`).all(id) || [];
+    const commands = db.prepare(`SELECT executed_at, command FROM commands WHERE player_id=? ORDER BY executed_at DESC`).all(id) || [];
+    res.json({ player, ips, sessions, commands });
   } catch (e) {
-    res.status(500).json({ error: e.message || String(e) });
+    res.json({ player: null, ips: [], sessions: [], commands: [] });
   }
 });
 
-// Player detail stub (until DB/log parsing is enabled)
-api.get('/player/:id', (req, res) => {
-  const id = Number(req.params.id || 0);
-  if (!id) return res.status(400).json({ error: 'bad id' });
-  res.json({
-    player: { id, username: 'Unknown', uuid: null, first_seen: null, last_seen: null, total_playtime: 0, last_ip: null },
-    ips: [],
-    sessions: [],
-    commands: []
-  });
+// Bans (cleaned)
+app.get('/api/bans', async (req, res) => {
+  const result = { players: [], ips: [] };
+  try {
+    const outPlayers = await rconQuery('banlist players');
+    const linesP = String(outPlayers || '').split('\n').map(s => s.trim()).filter(Boolean);
+    // ignore header like "There are 4 ban(s):"
+    const filteredP = linesP.filter(l => !/^There are\s+\d+\s+ban/i.test(l));
+    result.players = filteredP.map(cleanBanLine);
+  } catch {}
+  try {
+    const outIps = await rconQuery('banlist ips');
+    const linesI = String(outIps || '').split('\n').map(s => s.trim()).filter(Boolean);
+    const filteredI = linesI.filter(l => !/^There are\s+\d+\s+ban/i.test(l));
+    result.ips = filteredI.map(cleanBanLine).map(o => ({ ...o, type: 'ip' }));
+  } catch {}
+  res.json(result);
 });
 
-api.post('/restart-now', async (_req, res) => {
-  try { await rconQuery('say [Panel] Restarting now...'); } catch (_) {}
-  res.json({ ok: true });
-});
+/* -------------------- Static UI -------------------- */
+const staticDir = path.join(__dirname, 'public'); // <--- serve from /app/public
+app.use(express.static(staticDir, { fallthrough: true }));
 
-app.use('/api', api);
-
-// ---------- Static UI from /app/public ----------
-app.use(express.static(PUBLIC_DIR));
-
-app.get('/', (_req, res) => {
-  if (!fs.existsSync(INDEX_HTML)) {
-    return res
-      .status(200)
-      .type('text/plain')
-      .send(`MC RCON Panel\nUI file not found. Place index.html in ${PUBLIC_DIR}.`);
-  }
-  res.sendFile(INDEX_HTML);
-});
-
-// Fallback to index.html for non-API routes
-app.get('*', (req, res) => {
-  if (req.path.startsWith('/api/')) return res.status(404).send('Not found');
-  if (fs.existsSync(INDEX_HTML)) return res.sendFile(INDEX_HTML);
+app.get('/', (req, res) => {
+  const idx = path.join(staticDir, 'index.html');
+  if (fs.existsSync(idx)) return res.sendFile(idx);
   res
     .status(200)
     .type('text/plain')
-    .send(`MC RCON Panel\nUI file not found. Place index.html in ${PUBLIC_DIR}.`);
+    .send(`MC RCON Panel\nUI file not found. Place index.html in ${staticDir}.`);
 });
 
-// ---------- Start ----------
+/* -------------------- Start -------------------- */
 app.listen(PORT, HOST, () => {
   console.log(`Panel on http://${HOST}:${PORT}`);
 });
