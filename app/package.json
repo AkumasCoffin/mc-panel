@@ -8,11 +8,10 @@
     "postinstall": "node -e \"try{require('fs').mkdirSync('app/public',{recursive:true})}catch(e){}\""
   },
   "dependencies": {
-    "dotenv": "^16.4.5",
-    "express": "^4.19.2",
-    "express-basic-auth": "^1.2.1",
-    "node-cron": "^3.0.3",
-    "sqlite3": "^5.1.7",
-    "rcon-client": "^4.3.0"
-  }
+  "rcon-client": "^5.2.4",
+  "express": "^4.19.2",
+  "basic-auth": "^2.0.1",
+  "dotenv": "^16.4.5",
+  "sqlite3": "^5.1.7"
+ }
 }
