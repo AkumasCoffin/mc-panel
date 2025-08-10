@@ -37,7 +37,15 @@ th,td{padding:8px;border-bottom:1px solid #1a2540}th{color:#a9bbd9;text-align:le
 pre{white-space:pre-wrap;background:#0c1426;padding:10px;border-radius:10px}
 .toast{position:fixed;right:16px;bottom:16px;background:#0f172a;border:1px solid #213358;padding:10px 12px;border-radius:10px;display:none}
 .tag{display:inline-block;border:1px solid #2753a6;color:#cfe2ff;background:#0f1c39;border-radius:999px;padding:2px 8px;font-size:12px}
-canvas{width:100%;height:120px;display:block}
+/* Ban bubbles */
+.bubbles{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+.bubble{background:#0f172a;border:1px solid #223355;border-radius:14px;padding:12px}
+.bubble h4{margin:0 0 6px 0;font-size:14px;color:#cfe2ff}
+.meta{font-size:12px;color:#9db0cc;margin:6px 0}
+.kv{display:grid;grid-template-columns:90px 1fr;gap:6px;font-size:12px}
+.kv div{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.reason{margin-top:8px;padding:8px;border-radius:10px;background:#0c1426;border:1px solid #1b2b4d;font-size:12px}
+.badge{display:inline-block;font-size:11px;padding:2px 8px;border-radius:999px;border:1px solid #2a4ea2;background:#0f1c39;color:#cfe2ff;margin-left:6px}
 </style>
 </head>
 <body>
@@ -50,7 +58,6 @@ canvas{width:100%;height:120px;display:block}
     <a href="#" data-page="rest">⏱️ Restarts</a>
     <a href="#" data-page="cmd">⌨️ Commands</a>
     <a href="#" data-page="bc">📣 Broadcasts</a>
-    <a href="#" data-page="audit">🧾 Audit</a>
   </div>
 </div>
 
@@ -73,10 +80,6 @@ canvas{width:100%;height:120px;display:block}
         <h3>Quick Broadcast</h3>
         <input id="bcText" placeholder="Server restarting soon…"/>
         <div><button id="bcSend" class="btn ok">Send</button> <button id="bcPick" class="btn ghost">Use Preset</button></div>
-      </div>
-      <div class="card">
-        <h3>Perf · Players/Latency</h3>
-        <canvas id="perf"></canvas>
       </div>
     </div>
   </div>
@@ -106,7 +109,7 @@ canvas{width:100%;height:120px;display:block}
       <button id="ban-save" class="btn">Save Preset</button>
       <div class="small" id="ban-presets-note" style="margin-top:6px"></div>
     </div>
-    <div class="card"><h3>Current Bans</h3><pre id="bans"></pre></div>
+    <div class="card"><h3>Current Bans</h3><div id="bans-list" class="bubbles"></div></div>
   </div>
 
   <!-- Restarts -->
@@ -138,19 +141,13 @@ canvas{width:100%;height:120px;display:block}
       <button id="bp-send" class="btn ok">Send Broadcast</button>
     </div>
   </div>
-
-  <!-- Audit -->
-  <div id="page-audit" class="page" style="display:none">
-    <div class="header"><h2>Audit Log</h2></div>
-    <div class="card"><pre id="audit">—</pre></div>
-  </div>
 </div>
 
 <div id="modal" class="modal"><div class="win"><div id="modal-body"></div><div style="text-align:right;margin-top:8px"><button id="modal-close" class="btn ghost">Close</button></div></div></div>
 <div id="toast" class="toast"></div>
 
 <script>
-const pages=['dash','players','bans','rest','cmd','bc','audit'];
+const pages=['dash','players','bans','rest','cmd','bc'];
 document.querySelectorAll('.nav a').forEach(a=>{a.onclick=(e)=>{e.preventDefault();pages.forEach(p=>document.getElementById('page-'+p).style.display='none');document.querySelectorAll('.nav a').forEach(x=>x.classList.remove('active'));a.classList.add('active');document.getElementById('page-'+a.dataset.page).style.display='block';};});
 function showModal(html){const m=document.getElementById('modal');document.getElementById('modal-body').innerHTML=html;m.style.display='flex';}
 document.getElementById('modal-close').onclick=()=>{document.getElementById('modal').style.display='none';};
@@ -183,20 +180,51 @@ document.getElementById('ptbl').onclick=async(e)=>{if(!e.target.classList.contai
 
 async function refreshStatus(){const st=await api('/api/status');document.getElementById('status').textContent=st.online?'Online':'Offline';document.getElementById('next').textContent=st.next_restart_iso?new Date(st.next_restart_iso).toLocaleString():'None';document.getElementById('nextRel').textContent=st.next_restart_seconds!=null?`(${relFromSeconds(st.next_restart_seconds)})`:'';}
 async function refreshOnline(){const on=await api('/api/online');document.getElementById('pcount').textContent=on.count;document.getElementById('recent').textContent=on.players.map(p=>`${p.username} (${p.uuid||''})`).join('\n')||'—';}
-async function refreshPlayers(){/* optional: wire to your players API if/when filled */ const tb=document.querySelector('#ptbl tbody');tb.innerHTML='';}
-async function refreshBans(){const data=await api('/api/bans');document.getElementById('bans').textContent=JSON.stringify(data,null,2);}
+async function refreshPlayers(){const ps=await api('/api/players');const q=(document.getElementById('psearch').value||'').toLowerCase();const tb=document.querySelector('#ptbl tbody');tb.innerHTML=ps.filter(p=>!q||p.username.toLowerCase().includes(q)||(p.last_ip||'').includes(q)).map(p=>`<tr><td>${p.username}</td><td class="small">${p.uuid||''}</td><td>${p.last_ip||''}</td><td class="small">${p.first_seen||''}</td><td class="small">${p.last_seen||''}</td><td>${fmtDur(p.total_playtime||0)}</td><td><button class="v btn ghost" data-id="${p.id}">View</button></td></tr>`).join('');}
+
+/* Bans: bubble render */
+async function refreshBans(){
+  const data = await api('/api/bans');
+  const root = document.getElementById('bans-list');
+  const renderCard = (b) => {
+    const when = b.banned_at ? new Date(b.banned_at).toLocaleString() : 'unknown';
+    const title = b.type==='ip' ? b.target : (b.username || b.target);
+    const badge = b.type==='ip' ? 'IP ban' : 'Player ban';
+    const uuid = b.uuid ? `<div>UUID</div><div>${b.uuid}</div>` : '';
+    const lastSeen = b.last_seen ? new Date(b.last_seen).toLocaleString() : '—';
+    const playDur = b.playtime_seconds!=null ? fmtDur(b.playtime_seconds) : '—';
+    const lastIp = b.last_ip || (b.type==='ip' ? b.target : '—');
+    const by = b.by || 'Server';
+    const reason = b.reason || 'No reason provided';
+
+    return `
+      <div class="bubble">
+        <h4>${title} <span class="badge">${badge}</span></h4>
+        <div class="meta">Banned: <b>${when}</b> · By: <b>${by}</b></div>
+        <div class="kv">
+          <div>Last IP</div><div>${lastIp}</div>
+          ${uuid}
+          <div>Last Seen</div><div>${lastSeen}</div>
+          <div>Playtime</div><div>${playDur}</div>
+          <div>Reason</div><div class="reason">${reason.replace(/</g,'&lt;')}</div>
+        </div>
+      </div>
+    `;
+  };
+
+  const players = (data.players||[]).map(renderCard).join('');
+  const ips = (data.ips||[]).map(renderCard).join('');
+  root.innerHTML = (players + ips) || '<div class="small">No active bans.</div>';
+}
+
 async function refreshBanPresets(){const rows=await api('/api/ban-presets');const sel=document.getElementById('ban-preset');sel.innerHTML='<option value="">(no preset)</option>'+rows.map(r=>`<option value="${r.reason.replace(/"/g,'&quot;')}">${r.label}</option>`).join('');document.getElementById('ban-presets-note').textContent=rows.length?`${rows.length} preset(s) available.`:'No presets yet.';}
 async function refreshBcPresets(){const rows=await api('/api/broadcast-presets');const sel=document.getElementById('bp-select');sel.innerHTML=rows.map(r=>`<option data-message="${(r.message||'').replace(/"/g,'&quot;')}">${r.label}</option>`).join('');}
-async function refreshSchedules(){const rows=await api('/api/schedules');const tb=document.querySelector('#stbl tbody');tb.innerHTML=rows.map(r=>`<tr><td>${r.id}</td><td>${r.cron}</td><td>${r.label||''}</td><td>${r.enabled?'yes':'no'}</td><td><button class="t btn ghost" data-id="${r.id}">Toggle</button> <button class="d btn ghost" data-id="${r.id}">Delete</button></td></tr>`).join('');}
-async function refreshAudit(){const rows=await api('/api/audit');document.getElementById('audit').textContent=rows.map(r=>`${r.at} · ${r.ip||'-'} · ${r.username||'-'} · ${r.action} · ${r.details||''}`).join('\n')||'—';}
 
-// tiny perf graph
-const canvas=document.getElementById('perf');const ctx=canvas.getContext('2d');
-function drawPerf(points){const w=canvas.width,h=canvas.height;ctx.clearRect(0,0,w,h);if(!points.length)return;const maxPlayers=Math.max(10,...points.map(p=>p.online_count));const maxLat=Math.max(50,...points.map(p=>p.rcon_latency_ms||0));const pad=8;const innerW=w-2*pad,innerH=h-2*pad;ctx.strokeStyle='#2a66ff';ctx.beginPath();points.forEach((p,i)=>{const x=pad+(i/(points.length-1))*innerW;const y=pad+innerH-(p.online_count/maxPlayers)*innerH; i?ctx.lineTo(x,y):ctx.moveTo(x,y);});ctx.stroke();ctx.strokeStyle='#39ff14';ctx.beginPath();points.forEach((p,i)=>{const x=pad+(i/(points.length-1))*innerW;const y=pad+innerH-((p.rcon_latency_ms||0)/maxLat)*innerH; i?ctx.lineTo(x,y):ctx.moveTo(x,y);});ctx.stroke();}
-
-async function tick(){try{await refreshStatus();}catch{}try{await refreshOnline();}catch{}try{await refreshBans();}catch{}try{await refreshAudit();}catch{} try{await refreshBanPresets();}catch{}try{await refreshBcPresets();}catch{}try{await refreshSchedules();}catch{}
-  try{const pts=await api('/api/metrics/online?range=2h');drawPerf(pts);}catch{}}
+async function tick(){try{await refreshStatus();}catch{}try{await refreshOnline();}catch{}try{await refreshPlayers();}catch{}}
 setInterval(tick,2000); tick();
+refreshBans().catch(()=>{});refreshBanPresets().catch(()=>{});refreshBcPresets().catch(()=>{});refreshSchedules().catch(()=>{});
+
+async function refreshSchedules(){const rows=await api('/api/schedules');const tb=document.querySelector('#stbl tbody');tb.innerHTML=rows.map(r=>`<tr><td>${r.id}</td><td>${r.cron}</td><td>${r.label||''}</td><td>${r.enabled?'yes':'no'}</td><td><button class="t btn ghost" data-id="${r.id}">Toggle</button> <button class="d btn ghost" data-id="${r.id}">Delete</button></td></tr>`).join('');}
 
 </script>
 </body>
