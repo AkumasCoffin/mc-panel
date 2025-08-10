@@ -24,6 +24,7 @@ const PANEL_USER = process.env.PANEL_USER || 'admin';
 const PANEL_PASS = process.env.PANEL_PASS || 'changeme';
 
 const MC_SERVER_PATH = process.env.MC_SERVER_PATH || process.env.SERVER_DIR || '/root/mc-server-backup';
+const MC_SERVICE_NAME = process.env.MC_SERVICE_NAME || 'minecraft.service';
 const SERVER_LOG = process.env.SERVER_LOG || path.join(MC_SERVER_PATH, 'logs/latest.log');
 const BANNED_PLAYERS_JSON = process.env.BANNED_PLAYERS_JSON || path.join(MC_SERVER_PATH, 'banned-players.json');
 const BANNED_IPS_JSON = process.env.BANNED_IPS_JSON || path.join(MC_SERVER_PATH, 'banned-ips.json');
@@ -86,10 +87,14 @@ function ensurePlayer(name) {
   return p;
 }
 function parseLogLine(line) {
-  let m = line.match(/\bUUID of player ([\w.\-+]+) is ([0-9a-fA-F\-]{32,36})/);
+  // More flexible UUID pattern
+  let m = line.match(/\bUUID of player ([\w.\-+]{3,16}) is ([0-9a-fA-F\-]{32,36})/i);
   if (m) { ensurePlayer(m[1]).uuid = (m[2] || '').toLowerCase(); return; }
 
-  m = line.match(/:\s*([A-Za-z0-9_\-\.]+)\[\/([0-9\.]+):\d+\]\s+logged in/i);
+  // Multiple login patterns for different Minecraft versions and servers
+  m = line.match(/:\s*([A-Za-z0-9_\-\.]{3,16})\[\/([0-9\.]+):\d+\]\s+logged in/i) ||
+      line.match(/\[.*\].*:\s*([A-Za-z0-9_\-\.]{3,16})\[\/([0-9\.]+):\d+\]\s+logged in/i) ||
+      line.match(/\[.*\]\s+([A-Za-z0-9_\-\.]{3,16})\[\/([0-9\.]+):\d+\]\s+logged in/i);
   if (m) {
     const [, name, ip] = m;
     const p = ensurePlayer(name);
@@ -101,7 +106,11 @@ function parseLogLine(line) {
     p.online = true;
     return;
   }
-  m = line.match(/:\s*([A-Za-z0-9_\-\.]+)\s+joined the game/);
+
+  // Multiple join patterns
+  m = line.match(/:\s*([A-Za-z0-9_\-\.]{3,16})\s+joined the game/i) ||
+      line.match(/\[.*\].*:\s*([A-Za-z0-9_\-\.]{3,16})\s+joined the game/i) ||
+      line.match(/\[.*\]\s+([A-Za-z0-9_\-\.]{3,16})\s+joined the game/i);
   if (m) {
     const [, name] = m;
     const p = ensurePlayer(name);
@@ -110,7 +119,12 @@ function parseLogLine(line) {
     p.online = true;
     return;
   }
-  m = line.match(/:\s*([A-Za-z0-9_\-\.]+)\s+left the game/);
+
+  // Multiple leave patterns
+  m = line.match(/:\s*([A-Za-z0-9_\-\.]{3,16})\s+left the game/i) ||
+      line.match(/:\s*([A-Za-z0-9_\-\.]{3,16})\s+lost connection/i) ||
+      line.match(/\[.*\].*:\s*([A-Za-z0-9_\-\.]{3,16})\s+(?:left the game|lost connection)/i) ||
+      line.match(/\[.*\]\s+([A-Za-z0-9_\-\.]{3,16})\s+(?:left the game|lost connection)/i);
   if (m) {
     const [, name] = m;
     const p = ensurePlayer(name);
@@ -138,10 +152,28 @@ function bootstrapFromLog(file) {
   } catch (e) { console.warn('[panel] bootstrapFromLog failed:', e.message); }
 }
 function startTail(file) {
+  if (!fs.existsSync(file)) {
+    console.warn('[panel] Log file does not exist, will wait for it to be created:', file);
+    // Create the directory if it doesn't exist
+    const logDir = path.dirname(file);
+    if (!fs.existsSync(logDir)) {
+      try {
+        fs.mkdirSync(logDir, { recursive: true });
+        console.log('[panel] Created log directory:', logDir);
+      } catch (e) {
+        console.warn('[panel] Could not create log directory:', e.message);
+      }
+    }
+  }
+  
   let lastSize = 0;
   try { lastSize = fs.statSync(file).size; } catch {}
-  fs.watch(path.dirname(file), { persistent: true }, (evt, fname) => {
-    if (!fname || fname !== path.basename(file)) return;
+  
+  const logDir = path.dirname(file);
+  const logFile = path.basename(file);
+  
+  fs.watch(logDir, { persistent: true }, (evt, fname) => {
+    if (!fname || fname !== logFile) return;
     try {
       const stat = fs.statSync(file);
       if (stat.size < lastSize) lastSize = 0; // rotated
@@ -154,7 +186,10 @@ function startTail(file) {
         buf.toString('utf8').split(/\r?\n/).forEach(parseLogLine);
       }
       lastSize = stat.size;
-    } catch {}
+    } catch (e) {
+      // Log rotation or file temporarily unavailable
+      console.warn('[panel] Log file read error (this is normal during rotation):', e.message);
+    }
   });
 }
 if (SERVER_LOG && fs.existsSync(SERVER_LOG)) {
@@ -163,6 +198,33 @@ if (SERVER_LOG && fs.existsSync(SERVER_LOG)) {
   startTail(SERVER_LOG);
 } else {
   console.warn('[panel] SERVER_LOG missing or unreadable:', SERVER_LOG);
+}
+
+// Input validation middleware
+function validateCommandInput(req, res, next) {
+  const cmd = String((req.body && req.body.command) || '').trim();
+  if (!cmd) return res.status(400).json({ ok: false, out: 'No command provided.' });
+  if (cmd.length > 1000) return res.status(400).json({ ok: false, out: 'Command too long (max 1000 chars).' });
+  // Prevent potential command injection
+  if (/[;&|`$(){}[\]<>]/.test(cmd) && !/^(list|whitelist|ban|pardon|kick|tp|give|gamemode|time|weather|seed|difficulty)\b/i.test(cmd)) {
+    return res.status(400).json({ ok: false, out: 'Potentially unsafe command detected.' });
+  }
+  req.validatedCommand = cmd;
+  next();
+}
+
+function validateStringInput(field, maxLength = 500) {
+  return (req, res, next) => {
+    const value = req.body && req.body[field];
+    if (value !== undefined) {
+      const str = String(value).trim();
+      if (str.length > maxLength) {
+        return res.status(400).json({ error: `${field} too long (max ${maxLength} chars)` });
+      }
+      req.body[field] = str;
+    }
+    next();
+  };
 }
 
 // ---------- Helpers ----------
@@ -182,8 +244,9 @@ async function audit(action, payload) {
 function mcRestart(cb) {
   const candidate = '/usr/local/bin/mc-restart';
   if (fs.existsSync(candidate)) return execFile(candidate, (err, stdout, stderr) => cb && cb(err, stdout, stderr));
-  const p = spawn('sudo', ['systemctl', 'restart', 'minecraft.service'], { stdio: 'inherit' });
-  p.on('close', code => cb && cb(code ? new Error('systemctl exit '+code) : null, '', ''));
+  const p = spawn('sudo', ['systemctl', 'restart', MC_SERVICE_NAME], { stdio: 'inherit' });
+  p.on('close', code => cb && cb(code ? new Error(`systemctl exit ${code}`) : null, '', ''));
+  p.on('error', err => cb && cb(err, '', ''));
 }
 
 // ---------- Schedules ----------
@@ -264,10 +327,9 @@ app.get('/api/player/:id', basicAuth, async (req, res) => {
 });
 
 // Commands
-app.post('/api/command', basicAuth, async (req, res) => {
-  const cmd = String((req.body && req.body.command) || '').trim();
+app.post('/api/command', basicAuth, validateCommandInput, async (req, res) => {
+  const cmd = req.validatedCommand;
   await audit('panel_command', { cmd, from: req.ip, at: new Date().toISOString() });
-  if (!cmd) return res.json({ ok: false, out: 'No command provided.' });
 
   if (rconEnabled()) {
     try {
@@ -320,7 +382,7 @@ app.get('/api/bans', basicAuth, (req, res) => {
 app.get('/api/broadcast-presets', basicAuth, async (req, res) => {
   const rows = await all('SELECT id,label,message FROM broadcast_presets ORDER BY id DESC'); res.json(rows);
 });
-app.post('/api/broadcast-presets', basicAuth, async (req, res) => {
+app.post('/api/broadcast-presets', basicAuth, validateStringInput('label', 100), validateStringInput('message', 1000), async (req, res) => {
   const { label, message } = req.body || {};
   if (!message) return res.status(400).json({ error: 'message required' });
   await run('INSERT OR REPLACE INTO broadcast_presets(label,message) VALUES(?,?)', [label || null, String(message)]);
@@ -333,7 +395,7 @@ app.delete('/api/broadcast-presets/:id', basicAuth, async (req, res) => {
 app.get('/api/ban-presets', basicAuth, async (req, res) => {
   const rows = await all('SELECT id,label,reason FROM ban_presets ORDER BY id DESC'); res.json(rows);
 });
-app.post('/api/ban-presets', basicAuth, async (req, res) => {
+app.post('/api/ban-presets', basicAuth, validateStringInput('label', 100), validateStringInput('reason', 500), async (req, res) => {
   const { label, reason } = req.body || {};
   if (!reason) return res.status(400).json({ error: 'reason required' });
   await run('INSERT OR REPLACE INTO ban_presets(label,reason) VALUES(?,?)', [label || null, String(reason)]);
@@ -344,7 +406,7 @@ app.delete('/api/ban-presets/:id', basicAuth, async (req, res) => {
 });
 
 // Use presets
-app.post('/api/broadcast', basicAuth, async (req, res) => {
+app.post('/api/broadcast', basicAuth, validateStringInput('message', 1000), async (req, res) => {
   const { message, presetId } = req.body || {};
   let msg = String(message || '').trim();
   if (!msg && presetId) {
@@ -363,7 +425,7 @@ app.post('/api/broadcast', basicAuth, async (req, res) => {
   }
 });
 
-app.post('/api/ban', basicAuth, async (req, res) => {
+app.post('/api/ban', basicAuth, validateStringInput('username', 50), validateStringInput('reason', 500), async (req, res) => {
   const { username, reason, presetId } = req.body || {};
   if (!username) return res.status(400).json({ error: 'username required' });
   let why = String(reason || '').trim();
@@ -387,7 +449,7 @@ app.post('/api/ban', basicAuth, async (req, res) => {
 app.get('/api/schedules', basicAuth, async (req, res) => {
   const rows = await all('SELECT * FROM schedules ORDER BY id DESC'); res.json(rows);
 });
-app.post('/api/schedules', basicAuth, async (req, res) => {
+app.post('/api/schedules', basicAuth, validateStringInput('label', 100), async (req, res) => {
   const { cron: expr, label } = req.body || {};
   if (!expr || !cron.validate(expr)) return res.status(400).json({ error: 'bad cron' });
   const r = await run('INSERT INTO schedules(cron,label,enabled) VALUES(?,?,1)', [expr, label || null]);

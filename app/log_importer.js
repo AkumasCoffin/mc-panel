@@ -13,58 +13,96 @@ function paths(mcPath) {
   };
 }
 
-const RX_JOIN = /\]:\s*([A-Za-z0-9_]{3,16})\[\/(\d+\.\d+\.\d+\.\d+):\d+\]\s+logged in/;
-const RX_LEAVE = /\]:\s*([A-Za-z0-9_]{3,16}) lost connection/;
-const RX_CMD = /\]:\s*([A-Za-z0-9_]{3,16}) issued server command:\s*(.*)$/;
+const RX_JOIN = [
+  /\]:\s*([A-Za-z0-9_]{3,16})\[\/(\d+\.\d+\.\d+\.\d+):\d+\]\s+logged in/i,
+  /\[.*\].*:\s*([A-Za-z0-9_]{3,16})\[\/(\d+\.\d+\.\d+\.\d+):\d+\]\s+logged in/i,
+  /\[.*\]\s+([A-Za-z0-9_]{3,16})\[\/(\d+\.\d+\.\d+\.\d+):\d+\]\s+logged in/i
+];
+const RX_LEAVE = [
+  /\]:\s*([A-Za-z0-9_]{3,16}) lost connection/i,
+  /\]:\s*([A-Za-z0-9_]{3,16}) left the game/i,
+  /\[.*\].*:\s*([A-Za-z0-9_]{3,16})\s+(?:lost connection|left the game)/i,
+  /\[.*\]\s+([A-Za-z0-9_]{3,16})\s+(?:lost connection|left the game)/i
+];
+const RX_CMD = [
+  /\]:\s*([A-Za-z0-9_]{3,16}) issued server command:\s*(.*)$/i,
+  /\[.*\].*:\s*([A-Za-z0-9_]{3,16}) issued server command:\s*(.*)$/i,
+  /\[.*\]\s+([A-Za-z0-9_]{3,16}) issued server command:\s*(.*)$/i
+];
 const RX_UUID = /UUID of player ([A-Za-z0-9_]{3,16}) is ([0-9a-f-]{32,36})/i;
 
 async function lineHandler(line) {
   let m;
   if ((m = RX_UUID.exec(line))) {
     // could store UUID here if desired
-  } else if ((m = RX_JOIN.exec(line))) {
-    const username = m[1], ip = m[2];
-    const now = new Date().toISOString();
-    await new Promise((res, rej) => {
-      db.get('SELECT * FROM players WHERE username=?', [username], (e, p) => {
-        if (e) return rej(e);
-        if (!p) {
-          db.run('INSERT INTO players(username, first_seen, last_seen, last_ip) VALUES(?,?,?,?)', [username, now, now, ip], function (e2) {
-            if (e2) return rej(e2);
-            const pid = this.lastID;
-            db.run('INSERT INTO player_ips(player_id, ip, seen_at) VALUES(?,?,?)', [pid, ip, now], ()=>{});
-            db.run('INSERT INTO sessions(player_id, login_time) VALUES(?,?)', [pid, now], err => err ? rej(err) : res());
+  } else {
+    // Try all join patterns
+    let found = false;
+    for (const rx of RX_JOIN) {
+      if ((m = rx.exec(line))) {
+        const username = m[1], ip = m[2];
+        const now = new Date().toISOString();
+        await new Promise((res, rej) => {
+          db.get('SELECT * FROM players WHERE username=?', [username], (e, p) => {
+            if (e) return rej(e);
+            if (!p) {
+              db.run('INSERT INTO players(username, first_seen, last_seen, last_ip) VALUES(?,?,?,?)', [username, now, now, ip], function (e2) {
+                if (e2) return rej(e2);
+                const pid = this.lastID;
+                db.run('INSERT INTO player_ips(player_id, ip, seen_at) VALUES(?,?,?)', [pid, ip, now], ()=>{});
+                db.run('INSERT INTO sessions(player_id, login_time) VALUES(?,?)', [pid, now], err => err ? rej(err) : res());
+              });
+            } else {
+              db.run('UPDATE players SET last_seen=?, last_ip=? WHERE id=?', [now, ip, p.id], ()=>{});
+              db.run('INSERT INTO player_ips(player_id, ip, seen_at) VALUES(?,?,?)', [p.id, ip, now], ()=>{});
+              db.run('INSERT INTO sessions(player_id, login_time) VALUES(?,?)', [p.id, now], err => err ? rej(err) : res());
+            }
           });
-        } else {
-          db.run('UPDATE players SET last_seen=?, last_ip=? WHERE id=?', [now, ip, p.id], ()=>{});
-          db.run('INSERT INTO player_ips(player_id, ip, seen_at) VALUES(?,?,?)', [p.id, ip, now], ()=>{});
-          db.run('INSERT INTO sessions(player_id, login_time) VALUES(?,?)', [p.id, now], err => err ? rej(err) : res());
-        }
-      });
-    });
-  } else if ((m = RX_LEAVE.exec(line))) {
-    const username = m[1];
-    const now = new Date().toISOString();
-    await new Promise((res) => {
-      db.get('SELECT * FROM players WHERE username=?', [username], (e, p) => {
-        if (e || !p) return res();
-        db.get('SELECT * FROM sessions WHERE player_id=? AND logout_time IS NULL ORDER BY id DESC', [p.id], (e2, s) => {
-          if (e2 || !s) return res();
-          const dur = Math.max(0, Math.floor((Date.parse(now) - Date.parse(s.login_time)) / 1000));
-          db.run('UPDATE sessions SET logout_time=?, duration=? WHERE id=?', [now, dur, s.id], ()=>{});
-          db.run('UPDATE players SET total_playtime=total_playtime+? WHERE id=?', [dur, p.id], ()=>res());
         });
-      });
-    });
-  } else if ((m = RX_CMD.exec(line))) {
-    const username = m[1], command = m[2];
-    const now = new Date().toISOString();
-    await new Promise((res) => {
-      db.get('SELECT * FROM players WHERE username=?', [username], (e, p) => {
-        if (e || !p) return res();
-        db.run('INSERT INTO commands(player_id, command, executed_at) VALUES(?,?,?)', [p.id, command, now], ()=>res());
-      });
-    });
+        found = true;
+        break;
+      }
+    }
+    
+    if (!found) {
+      // Try all leave patterns
+      for (const rx of RX_LEAVE) {
+        if ((m = rx.exec(line))) {
+          const username = m[1];
+          const now = new Date().toISOString();
+          await new Promise((res) => {
+            db.get('SELECT * FROM players WHERE username=?', [username], (e, p) => {
+              if (e || !p) return res();
+              db.get('SELECT * FROM sessions WHERE player_id=? AND logout_time IS NULL ORDER BY id DESC', [p.id], (e2, s) => {
+                if (e2 || !s) return res();
+                const dur = Math.max(0, Math.floor((Date.parse(now) - Date.parse(s.login_time)) / 1000));
+                db.run('UPDATE sessions SET logout_time=?, duration=? WHERE id=?', [now, dur, s.id], ()=>{});
+                db.run('UPDATE players SET total_playtime=total_playtime+? WHERE id=?', [dur, p.id], ()=>res());
+              });
+            });
+          });
+          found = true;
+          break;
+        }
+      }
+    }
+    
+    if (!found) {
+      // Try all command patterns
+      for (const rx of RX_CMD) {
+        if ((m = rx.exec(line))) {
+          const username = m[1], command = m[2];
+          const now = new Date().toISOString();
+          await new Promise((res) => {
+            db.get('SELECT * FROM players WHERE username=?', [username], (e, p) => {
+              if (e || !p) return res();
+              db.run('INSERT INTO commands(player_id, command, executed_at) VALUES(?,?,?)', [p.id, command, now], ()=>res());
+            });
+          });
+          break;
+        }
+      }
+    }
   }
 }
 

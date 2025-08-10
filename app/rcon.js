@@ -23,13 +23,35 @@ async function sendRconCommand(cmd) {
   const host = process.env.RCON_HOST || '127.0.0.1';
   const port = Number(process.env.RCON_PORT || 25575);
 
+  if (isNaN(port) || port < 1 || port > 65535) {
+    throw new Error('Invalid RCON port');
+  }
+
   const mod = await loadRconModule();
   const Rcon = mod.Rcon || mod;
-  const r = await Rcon.connect({ host, port, password: pass });
+  let r = null;
+  
   try {
+    r = await Rcon.connect({ host, port, password: pass });
     return await r.send(cmd);
+  } catch (err) {
+    // Don't expose sensitive connection details
+    if (err.message.includes('password')) {
+      throw new Error('RCON authentication failed');
+    } else if (err.message.includes('ECONNREFUSED') || err.message.includes('ECONNRESET')) {
+      throw new Error('RCON server unavailable');
+    } else if (err.message.includes('timeout')) {
+      throw new Error('RCON connection timeout');
+    }
+    throw new Error('RCON command failed');
   } finally {
-    r.end();
+    if (r && typeof r.end === 'function') {
+      try {
+        r.end();
+      } catch (e) {
+        // Ignore cleanup errors
+      }
+    }
   }
 }
 

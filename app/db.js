@@ -1,9 +1,21 @@
 // db.js - SQLite helper with schema + promise API
 const path = require('path');
+const fs = require('fs');
 const sqlite3 = require('sqlite3').verbose();
 
 const rawFile = process.env.DB_FILE || path.join(__dirname, 'webgui.sqlite');
 const DB_FILE = path.isAbsolute(rawFile) ? rawFile : path.join(__dirname, rawFile);
+
+// Ensure directory exists
+const dbDir = path.dirname(DB_FILE);
+if (!fs.existsSync(dbDir)) {
+  try {
+    fs.mkdirSync(dbDir, { recursive: true });
+  } catch (err) {
+    console.error('[db] Failed to create database directory:', err.message);
+    process.exit(1);
+  }
+}
 
 const db = new sqlite3.Database(DB_FILE);
 
