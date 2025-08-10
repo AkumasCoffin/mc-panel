@@ -1,3 +1,4 @@
+// log_importer.js - import historical logs and tail to DB (sessions, commands, IPs)
 const fs = require('fs');
 const zlib = require('zlib');
 const readline = require('readline');
@@ -20,7 +21,7 @@ const RX_UUID = /UUID of player ([A-Za-z0-9_]{3,16}) is ([0-9a-f-]{32,36})/i;
 async function lineHandler(line) {
   let m;
   if ((m = RX_UUID.exec(line))) {
-    // Optional: store UUID mapping later if needed
+    // could store UUID here if desired
   } else if ((m = RX_JOIN.exec(line))) {
     const username = m[1], ip = m[2];
     const now = new Date().toISOString();
@@ -31,8 +32,8 @@ async function lineHandler(line) {
           db.run('INSERT INTO players(username, first_seen, last_seen, last_ip) VALUES(?,?,?,?)', [username, now, now, ip], function (e2) {
             if (e2) return rej(e2);
             const pid = this.lastID;
-            db.run('INSERT INTO player_ips(player_id, ip, seen_at) VALUES(?,?,?)', [pid, ip, now], err => err ? rej(err) : res());
-            db.run('INSERT INTO sessions(player_id, login_time) VALUES(?,?)', [pid, now], ()=>{});
+            db.run('INSERT INTO player_ips(player_id, ip, seen_at) VALUES(?,?,?)', [pid, ip, now], ()=>{});
+            db.run('INSERT INTO sessions(player_id, login_time) VALUES(?,?)', [pid, now], err => err ? rej(err) : res());
           });
         } else {
           db.run('UPDATE players SET last_seen=?, last_ip=? WHERE id=?', [now, ip, p.id], ()=>{});
