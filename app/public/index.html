@@ -147,85 +147,284 @@ pre{white-space:pre-wrap;background:#0c1426;padding:10px;border-radius:10px}
 <div id="toast" class="toast"></div>
 
 <script>
+/* -------- Auth helpers (Basic) -------- */
+function getAuthToken() { return localStorage.getItem('auth_b64') || ''; }
+function setAuthToken(b64) { if (b64) localStorage.setItem('auth_b64', b64); }
+function clearAuthToken() { localStorage.removeItem('auth_b64'); }
+async function promptForCreds() {
+  const u = prompt('Panel username:');
+  if (!u) return null;
+  const p = prompt('Panel password:');
+  if (p == null) return null;
+  const b64 = btoa(`${u}:${p}`);
+  setAuthToken(b64);
+  return b64;
+}
+
+/* -------- UI helpers -------- */
 const pages=['dash','players','bans','rest','cmd','bc'];
-document.querySelectorAll('.nav a').forEach(a=>{a.onclick=(e)=>{e.preventDefault();pages.forEach(p=>document.getElementById('page-'+p).style.display='none');document.querySelectorAll('.nav a').forEach(x=>x.classList.remove('active'));a.classList.add('active');document.getElementById('page-'+a.dataset.page).style.display='block';};});
+document.querySelectorAll('.nav a').forEach(a=>{
+  a.onclick=(e)=>{e.preventDefault();
+    pages.forEach(p=>document.getElementById('page-'+p).style.display='none');
+    document.querySelectorAll('.nav a').forEach(x=>x.classList.remove('active'));
+    a.classList.add('active');
+    document.getElementById('page-'+a.dataset.page).style.display='block';
+  };
+});
 function showModal(html){const m=document.getElementById('modal');document.getElementById('modal-body').innerHTML=html;m.style.display='flex';}
 document.getElementById('modal-close').onclick=()=>{document.getElementById('modal').style.display='none';};
 function toast(t){const el=document.getElementById('toast');el.textContent=t;el.style.display='block';setTimeout(()=>el.style.display='none',1600);}
-async function api(p,o){const r=await fetch(p,{credentials:'include',headers:{'Content-Type':'application/json'},...o});if(!r.ok)throw new Error(await r.text());return r.json();}
 function fmtDur(s){s=Number(s||0);const d=Math.floor(s/86400);s%=86400;const h=Math.floor(s/3600);s%=3600;const m=Math.floor(s/60);return (d?d+'d ':'')+h+'h '+m+'m';}
 function relFromSeconds(s){if(s==null)return'';const m=Math.floor(s/60),sec=s%60;if(s>=3600){const h=Math.floor(m/60),rm=m%60;return`in ${h}h ${rm}m`;}if(s>=60)return`in ${m}m ${sec}s`;return`in ${sec}s`;}
+function safe(v, def=''){return v==null?def:String(v);}
 
-document.getElementById('btn-emerg').onclick=async()=>{if(!confirm('Emergency restart now?'))return;await api('/api/restart-now',{method:'POST'}).then(()=>toast('Restart sent')).catch(()=>toast('Failed'));};
+/* -------- fetch wrapper with Basic Auth & retry -------- */
+async function api(p,o){
+  const auth = getAuthToken();
+  const baseHeaders = { 'Content-Type':'application/json' };
+  const headers = auth ? { ...baseHeaders, 'Authorization':'Basic '+auth } : baseHeaders;
+  const r = await fetch(p,{credentials:'include',headers, ...o});
+  if(r.status===401){
+    const newAuth = await promptForCreds();
+    if(!newAuth) throw new Error('Auth cancelled');
+    const r2 = await fetch(p,{credentials:'include',headers:{...baseHeaders,'Authorization':'Basic '+newAuth},...o});
+    if(!r2.ok) throw new Error(await r2.text());
+    return r2.json();
+  }
+  if(!r.ok) throw new Error(await r.text());
+  // some endpoints might return empty
+  const ct = r.headers.get('content-type')||'';
+  return ct.includes('application/json') ? r.json() : {};
+}
 
-document.getElementById('bcSend').onclick=async()=>{const message=document.getElementById('bcText').value.trim();if(!message)return;await api('/api/broadcast',{method:'POST',body:JSON.stringify({message})}).then(()=>toast('Broadcast sent')).catch(()=>toast('Failed'));};
-document.getElementById('bcPick').onclick=async()=>{const rows=await api('/api/broadcast-presets');if(!rows.length){toast('No presets yet');return;}const html='<h3>Presets</h3><ul>'+rows.map(r=>`<li><button class="btn ghost bp" data-msg="${encodeURIComponent(r.message)}">${r.label}</button></li>`).join('')+'</ul>';showModal(html);};
-document.getElementById('modal-body').onclick=(e)=>{if(e.target.classList.contains('bp')){document.getElementById('bcText').value=decodeURIComponent(e.target.dataset.msg);document.getElementById('modal').style.display='none';}};
+/* -------- Buttons / actions -------- */
+document.getElementById('btn-emerg').onclick=async()=>{
+  if(!confirm('Emergency restart now?'))return;
+  try{await api('/api/restart-now',{method:'POST'});toast('Restart sent');}catch(e){toast('Failed: '+e.message);}
+};
 
-document.getElementById('send').onclick=async()=>{const c=document.getElementById('cmd').value.trim();if(!c)return;const out=await api('/api/command',{method:'POST',body:JSON.stringify({command:c})});document.getElementById('cout').textContent=out.out||JSON.stringify(out);};
+document.getElementById('bcSend').onclick=async()=>{
+  const message=document.getElementById('bcText').value.trim();if(!message)return;
+  try{await api('/api/broadcast',{method:'POST',body:JSON.stringify({message})});toast('Broadcast sent');}catch(e){toast('Failed: '+e.message);}
+};
+document.getElementById('bcPick').onclick=async()=>{
+  try{
+    const rows=await api('/api/broadcast-presets');
+    if(!rows.length){toast('No presets yet');return;}
+    const html='<h3>Presets</h3><ul>'+rows.map(r=>`<li><button class="btn ghost bp" data-msg="${encodeURIComponent(r.message||'')}">${r.label}</button></li>`).join('')+'</ul>';
+    showModal(html);
+  }catch(e){toast('Failed: '+e.message);}
+};
+document.getElementById('modal-body').onclick=(e)=>{
+  if(e.target.classList.contains('bp')){
+    document.getElementById('bcText').value=decodeURIComponent(e.target.dataset.msg||'');
+    document.getElementById('modal').style.display='none';
+  }
+};
 
-document.getElementById('ban-do').onclick=async()=>{const ip=document.getElementById('ban-ip').value.trim();const preset=document.getElementById('ban-preset').value;const manual=document.getElementById('ban-reason').value.trim();const reason=manual||preset||undefined;if(!ip)return toast('Enter IP');await api('/api/ban-ip',{method:'POST',body:JSON.stringify({ip,reason})}).then(()=>{toast('IP banned');refreshBans();}).catch(()=>toast('Failed'));};
-document.getElementById('ban-save').onclick=async()=>{const label=document.getElementById('ban-label').value.trim();const reason=document.getElementById('ban-msg').value.trim();if(!label||!reason)return toast('Fill both');await api('/api/ban-presets',{method:'POST',body:JSON.stringify({label,reason})}).then(()=>{toast('Preset saved');refreshBanPresets();}).catch(()=>toast('Failed'));};
+document.getElementById('send').onclick=async()=>{
+  const c=document.getElementById('cmd').value.trim();if(!c)return;
+  try{
+    const out=await api('/api/command',{method:'POST',body:JSON.stringify({command:c})});
+    document.getElementById('cout').textContent=out.out||JSON.stringify(out,null,2);
+  }catch(e){document.getElementById('cout').textContent='Error: '+e.message;}
+};
+
+document.getElementById('ban-do').onclick=async()=>{
+  const ip=document.getElementById('ban-ip').value.trim();
+  const preset=document.getElementById('ban-preset').value;
+  const manual=document.getElementById('ban-reason').value.trim();
+  const reason=manual||preset||undefined;
+  if(!ip) return toast('Enter IP');
+  try{await api('/api/ban-ip',{method:'POST',body:JSON.stringify({ip,reason})});toast('IP banned');refreshBans();}catch(e){toast('Failed: '+e.message);}
+};
+document.getElementById('ban-save').onclick=async()=>{
+  const label=document.getElementById('ban-label').value.trim();
+  const reason=document.getElementById('ban-msg').value.trim();
+  if(!label||!reason) return toast('Fill both');
+  try{await api('/api/ban-presets',{method:'POST',body:JSON.stringify({label,reason})});toast('Preset saved');refreshBanPresets();}catch(e){toast('Failed: '+e.message);}
+};
 document.getElementById('ban-refresh').onclick=()=>refreshBans();
 
-document.getElementById('bp-save').onclick=async()=>{const label=document.getElementById('bp-label').value.trim();const message=document.getElementById('bp-msg').value.trim();if(!label||!message)return toast('Fill both');await api('/api/broadcast-presets',{method:'POST',body:JSON.stringify({label,message})}).then(()=>toast('Saved')).catch(()=>toast('Failed'));};
-document.getElementById('bp-send').onclick=async()=>{const sel=document.getElementById('bp-select');const opt=sel.options[sel.selectedIndex];if(!opt)return;await api('/api/broadcast',{method:'POST',body:JSON.stringify({message:opt.dataset.message})}).then(()=>toast('Broadcast sent')).catch(()=>toast('Failed'));};
+document.getElementById('bp-save').onclick=async()=>{
+  const label=document.getElementById('bp-label').value.trim();
+  const message=document.getElementById('bp-msg').value.trim();
+  if(!label||!message) return toast('Fill both');
+  try{await api('/api/broadcast-presets',{method:'POST',body:JSON.stringify({label,message})});toast('Saved');}catch(e){toast('Failed: '+e.message);}
+};
+document.getElementById('bp-send').onclick=async()=>{
+  const sel=document.getElementById('bp-select');
+  const opt=sel.options[sel.selectedIndex];
+  if(!opt) return;
+  try{await api('/api/broadcast',{method:'POST',body:JSON.stringify({message:opt.dataset.message||''})});toast('Broadcast sent');}catch(e){toast('Failed: '+e.message);}
+};
 
-document.getElementById('stbl').onclick=async(e)=>{if(e.target.classList.contains('t')){await api('/api/schedules/'+e.target.dataset.id+'/toggle',{method:'POST'});refreshSchedules();}if(e.target.classList.contains('d')){await api('/api/schedules/'+e.target.dataset.id,{method:'DELETE'});refreshSchedules();}};
-document.getElementById('sadd').onclick=async()=>{const cron=document.getElementById('cron').value.trim();const label=document.getElementById('label').value.trim();if(!cron)return;await api('/api/schedules',{method:'POST',body:JSON.stringify({cron,label})});document.getElementById('cron').value='';document.getElementById('label').value='';refreshSchedules();};
+document.getElementById('stbl').onclick=async(e)=>{
+  if(e.target.classList.contains('t')){
+    await api('/api/schedules/'+e.target.dataset.id+'/toggle',{method:'POST'}).catch(()=>{});
+    refreshSchedules();
+  }
+  if(e.target.classList.contains('d')){
+    await api('/api/schedules/'+e.target.dataset.id,{method:'DELETE'}).catch(()=>{});
+    refreshSchedules();
+  }
+};
+document.getElementById('sadd').onclick=async()=>{
+  const cron=document.getElementById('cron').value.trim();
+  const label=document.getElementById('label').value.trim();
+  if(!cron) return;
+  await api('/api/schedules',{method:'POST',body:JSON.stringify({cron,label})}).catch(()=>{});
+  document.getElementById('cron').value='';document.getElementById('label').value='';
+  refreshSchedules();
+};
 document.getElementById('sref').onclick=refreshSchedules;
 
 document.getElementById('psearch').addEventListener('input', refreshPlayers);
-document.getElementById('ptbl').onclick=async(e)=>{if(!e.target.classList.contains('v'))return;const id=e.target.dataset.id;const d=await api('/api/player/'+id);const p=d.player;const lines=[];lines.push(`<h3>${p.username} ${p.uuid?`<span class="tag">${p.uuid}</span>`:''}</h3>`);lines.push(`<div class="small">Latest IP: ${p.last_ip||'-'} · First: ${p.first_seen||'-'} · Last: ${p.last_seen||'-'} · Playtime: ${fmtDur(p.total_playtime||0)}</div>`);lines.push('<h4>IPs</h4><ul>'+d.ips.map(x=>`<li>${x.ip} <span class="small">${x.seen_at}</span></li>`).join('')+'</ul>');lines.push('<h4>Sessions</h4><ul>'+d.sessions.map(s=>`<li>${s.login_time} → ${s.logout_time||'(active)'} <span class="small">${s.duration?fmtDur(s.duration):''}</span></li>`).join('')+'</ul>');lines.push('<h4>Commands</h4><ul>'+d.commands.map(c=>`<li>${c.executed_at}: <code>${(c.command||'').replace(/</g,'&lt;')}</code></li>`).join('')+'</ul>');showModal(lines.join(''));};
+document.getElementById('ptbl').onclick=async(e)=>{
+  if(!e.target.classList.contains('v'))return;
+  const id=e.target.dataset.id;
+  try{
+    const d=await api('/api/player/'+id);
+    const p=d.player||{};
+    const lines=[];
+    lines.push(`<h3>${safe(p.username,'(unknown)')} ${p.uuid?`<span class="tag">${p.uuid}</span>`:''}</h3>`);
+    lines.push(`<div class="small">Latest IP: ${safe(p.last_ip,'-')} · First: ${safe(p.first_seen,'-')} · Last: ${safe(p.last_seen,'-')} · Playtime: ${p.total_playtime!=null?fmtDur(p.total_playtime):'-'}</div>`);
+    const ips=(d.ips||[]).map(x=>`<li>${safe(x.ip)} <span class="small">${safe(x.seen_at,'')}</span></li>`).join('');
+    const ses=(d.sessions||[]).map(s=>`<li>${safe(s.login_time)} → ${safe(s.logout_time||'(active)')} <span class="small">${s.duration?fmtDur(s.duration):''}</span></li>`).join('');
+    const cmds=(d.commands||[]).map(c=>`<li>${safe(c.executed_at)}: <code>${safe((c.command||'').replace(/</g,'&lt;'))}</code></li>`).join('');
+    lines.push('<h4>IPs</h4><ul>'+(ips||'<li class="small">None</li>')+'</ul>');
+    lines.push('<h4>Sessions</h4><ul>'+(ses||'<li class="small">None</li>')+'</ul>');
+    lines.push('<h4>Commands</h4><ul>'+(cmds||'<li class="small">None</li>')+'</ul>');
+    showModal(lines.join(''));
+  }catch(e){toast('Failed: '+e.message);}
+};
 
-async function refreshStatus(){const st=await api('/api/status');document.getElementById('status').textContent=st.online?'Online':'Offline';document.getElementById('next').textContent=st.next_restart_iso?new Date(st.next_restart_iso).toLocaleString():'None';document.getElementById('nextRel').textContent=st.next_restart_seconds!=null?`(${relFromSeconds(st.next_restart_seconds)})`:'';}
-async function refreshOnline(){const on=await api('/api/online');document.getElementById('pcount').textContent=on.count;document.getElementById('recent').textContent=on.players.map(p=>`${p.username} (${p.uuid||''})`).join('\n')||'—';}
-async function refreshPlayers(){const ps=await api('/api/players');const q=(document.getElementById('psearch').value||'').toLowerCase();const tb=document.querySelector('#ptbl tbody');tb.innerHTML=ps.filter(p=>!q||p.username.toLowerCase().includes(q)||(p.last_ip||'').includes(q)).map(p=>`<tr><td>${p.username}</td><td class="small">${p.uuid||''}</td><td>${p.last_ip||''}</td><td class="small">${p.first_seen||''}</td><td class="small">${p.last_seen||''}</td><td>${fmtDur(p.total_playtime||0)}</td><td><button class="v btn ghost" data-id="${p.id}">View</button></td></tr>`).join('');}
-
-/* Bans: bubble render */
+/* -------- Data refreshers -------- */
+async function refreshStatus(){
+  try{
+    const st=await api('/api/status');
+    document.getElementById('status').textContent=st.online?'Online':'Offline';
+    document.getElementById('next').textContent=st.next_restart_iso?new Date(st.next_restart_iso).toLocaleString():'None';
+    document.getElementById('nextRel').textContent=st.next_restart_seconds!=null?`(${relFromSeconds(st.next_restart_seconds)})`:'';
+  }catch(e){
+    document.getElementById('status').textContent='—';
+  }
+}
+async function refreshOnline(){
+  try{
+    const on=await api('/api/online');
+    document.getElementById('pcount').textContent = (on && typeof on.count==='number') ? on.count : '0';
+    const lines = (on && Array.isArray(on.players) ? on.players : [])
+      .map(p=>{
+        const name = safe(p.username,'unknown');
+        const id = safe(p.uuid,'');
+        return id ? `${name} (${id})` : name;
+      });
+    document.getElementById('recent').textContent = lines.length ? lines.join('\n') : '—';
+  }catch(e){
+    document.getElementById('pcount').textContent='—';
+    document.getElementById('recent').textContent='—';
+  }
+}
+async function refreshPlayers(){
+  try{
+    const ps=await api('/api/players');
+    const q=(document.getElementById('psearch').value||'').toLowerCase();
+    const rows=(Array.isArray(ps)?ps:[]).filter(p=>{
+      const u=(p.username||'').toLowerCase();
+      const ip=p.last_ip||'';
+      return !q || u.includes(q) || ip.includes(q);
+    }).map(p=>`<tr>
+      <td>${safe(p.username)}</td>
+      <td class="small">${safe(p.uuid,'')}</td>
+      <td>${safe(p.last_ip,'')}</td>
+      <td class="small">${safe(p.first_seen,'')}</td>
+      <td class="small">${safe(p.last_seen,'')}</td>
+      <td>${p.total_playtime!=null?fmtDur(p.total_playtime):'-'}</td>
+      <td><button class="v btn ghost" data-id="${p.id}">View</button></td>
+    </tr>`).join('');
+    document.querySelector('#ptbl tbody').innerHTML = rows || '<tr><td colspan="7" class="small">No players.</td></tr>';
+  }catch(e){
+    document.querySelector('#ptbl tbody').innerHTML = '<tr><td colspan="7" class="small">Failed to load.</td></tr>';
+  }
+}
 async function refreshBans(){
-  const data = await api('/api/bans');
-  const root = document.getElementById('bans-list');
-  const renderCard = (b) => {
-    const when = b.banned_at ? new Date(b.banned_at).toLocaleString() : 'unknown';
-    const title = b.type==='ip' ? b.target : (b.username || b.target);
-    const badge = b.type==='ip' ? 'IP ban' : 'Player ban';
-    const uuid = b.uuid ? `<div>UUID</div><div>${b.uuid}</div>` : '';
-    const lastSeen = b.last_seen ? new Date(b.last_seen).toLocaleString() : '—';
-    const playDur = b.playtime_seconds!=null ? fmtDur(b.playtime_seconds) : '—';
-    const lastIp = b.last_ip || (b.type==='ip' ? b.target : '—');
-    const by = b.by || 'Server';
-    const reason = b.reason || 'No reason provided';
+  try{
+    const data = await api('/api/bans');
+    const root = document.getElementById('bans-list');
+    const renderCard = (b) => {
+      const when = b.banned_at ? new Date(b.banned_at).toLocaleString() : '—';
+      const title = b.type==='ip' ? safe(b.target,'(ip)') : safe(b.username||b.target,'(player)');
+      const badge = b.type==='ip' ? 'IP ban' : 'Player ban';
+      const uuid = b.uuid ? `<div>UUID</div><div>${safe(b.uuid)}</div>` : '';
+      const lastSeen = b.last_seen ? new Date(b.last_seen).toLocaleString() : '—';
+      const playDur = (b.playtime_seconds!=null) ? fmtDur(b.playtime_seconds) : '—';
+      const lastIp = b.last_ip || (b.type==='ip' ? b.target : '—');
+      const by = safe(b.by,'Server');
+      const reason = safe((b.reason||'No reason provided').replace(/</g,'&lt;'));
 
-    return `
-      <div class="bubble">
-        <h4>${title} <span class="badge">${badge}</span></h4>
-        <div class="meta">Banned: <b>${when}</b> · By: <b>${by}</b></div>
-        <div class="kv">
-          <div>Last IP</div><div>${lastIp}</div>
-          ${uuid}
-          <div>Last Seen</div><div>${lastSeen}</div>
-          <div>Playtime</div><div>${playDur}</div>
-          <div>Reason</div><div class="reason">${reason.replace(/</g,'&lt;')}</div>
+      return `
+        <div class="bubble">
+          <h4>${title} <span class="badge">${badge}</span></h4>
+          <div class="meta">Banned: <b>${when}</b> · By: <b>${by}</b></div>
+          <div class="kv">
+            <div>Last IP</div><div>${safe(lastIp)}</div>
+            ${uuid}
+            <div>Last Seen</div><div>${lastSeen}</div>
+            <div>Playtime</div><div>${playDur}</div>
+            <div>Reason</div><div class="reason">${reason}</div>
+          </div>
         </div>
-      </div>
-    `;
-  };
-
-  const players = (data.players||[]).map(renderCard).join('');
-  const ips = (data.ips||[]).map(renderCard).join('');
-  root.innerHTML = (players + ips) || '<div class="small">No active bans.</div>';
+      `;
+    };
+    const players = (data.players||[]).map(renderCard).join('');
+    const ips = (data.ips||[]).map(renderCard).join('');
+    root.innerHTML = (players + ips) || '<div class="small">No active bans.</div>';
+  }catch(e){
+    document.getElementById('bans-list').innerHTML='<div class="small">Failed to load.</div>';
+  }
+}
+async function refreshBanPresets(){
+  try{
+    const rows=await api('/api/ban-presets');
+    const sel=document.getElementById('ban-preset');
+    sel.innerHTML='<option value="">(no preset)</option>'+rows.map(r=>`<option value="${(r.reason||'').replace(/"/g,'&quot;')}">${r.label}</option>`).join('');
+    document.getElementById('ban-presets-note').textContent=rows.length?`${rows.length} preset(s) available.`:'No presets yet.';
+  }catch(e){/* ignore */}
+}
+async function refreshBcPresets(){
+  try{
+    const rows=await api('/api/broadcast-presets');
+    const sel=document.getElementById('bp-select');
+    sel.innerHTML=rows.map(r=>`<option data-message="${(r.message||'').replace(/"/g,'&quot;')}">${r.label}</option>`).join('');
+  }catch(e){/* ignore */}
+}
+async function refreshSchedules(){
+  try{
+    const rows=await api('/api/schedules');
+    const tb=document.querySelector('#stbl tbody');
+    tb.innerHTML=rows.map(r=>`<tr>
+      <td>${r.id}</td><td>${r.cron}</td><td>${r.label||''}</td>
+      <td>${r.enabled?'yes':'no'}</td>
+      <td><button class="t btn ghost" data-id="${r.id}">Toggle</button> <button class="d btn ghost" data-id="${r.id}">Delete</button></td>
+    </tr>`).join('');
+  }catch(e){
+    document.querySelector('#stbl tbody').innerHTML='<tr><td colspan="5" class="small">Failed to load.</td></tr>';
+  }
 }
 
-async function refreshBanPresets(){const rows=await api('/api/ban-presets');const sel=document.getElementById('ban-preset');sel.innerHTML='<option value="">(no preset)</option>'+rows.map(r=>`<option value="${r.reason.replace(/"/g,'&quot;')}">${r.label}</option>`).join('');document.getElementById('ban-presets-note').textContent=rows.length?`${rows.length} preset(s) available.`:'No presets yet.';}
-async function refreshBcPresets(){const rows=await api('/api/broadcast-presets');const sel=document.getElementById('bp-select');sel.innerHTML=rows.map(r=>`<option data-message="${(r.message||'').replace(/"/g,'&quot;')}">${r.label}</option>`).join('');}
-
-async function tick(){try{await refreshStatus();}catch{}try{await refreshOnline();}catch{}try{await refreshPlayers();}catch{}}
-setInterval(tick,2000); tick();
-refreshBans().catch(()=>{});refreshBanPresets().catch(()=>{});refreshBcPresets().catch(()=>{});refreshSchedules().catch(()=>{});
-
-async function refreshSchedules(){const rows=await api('/api/schedules');const tb=document.querySelector('#stbl tbody');tb.innerHTML=rows.map(r=>`<tr><td>${r.id}</td><td>${r.cron}</td><td>${r.label||''}</td><td>${r.enabled?'yes':'no'}</td><td><button class="t btn ghost" data-id="${r.id}">Toggle</button> <button class="d btn ghost" data-id="${r.id}">Delete</button></td></tr>`).join('');}
-
+/* -------- Poll tick -------- */
+async function tick(){
+  await refreshStatus();
+  await refreshOnline();
+  await refreshPlayers();
+}
+setInterval(tick,2000);
+tick();
+refreshBans().catch(()=>{});
+refreshBanPresets().catch(()=>{});
+refreshBcPresets().catch(()=>{});
+refreshSchedules().catch(()=>{});
 </script>
 </body>
 </html>
