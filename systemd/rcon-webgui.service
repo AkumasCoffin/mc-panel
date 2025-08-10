@@ -3,10 +3,10 @@ Description=Minecraft RCON WebGUI
 After=network.target
 
 [Service]
-WorkingDirectory=/opt/mc-rcon-webgui/app
 User=root
 Environment=NODE_ENV=production
-ExecStart=/usr/bin/node server.js
+WorkingDirectory=/opt/mc-rcon-webgui
+ExecStart=/usr/bin/node app/server.js
 Restart=always
 RestartSec=3
 
