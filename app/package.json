@@ -6,8 +6,7 @@
   "main": "server.js",
   "type": "commonjs",
   "scripts": {
-    "start": "node app/server.js",
-    "postinstall": "node -e \"try{require('fs').mkdirSync('app/public',{recursive:true})}catch(e){}\""
+    "start": "node app/server.js"  // or "node server.js" if package.json is inside app/
   },
   "dependencies": {
     "cron-parser": "^4.9.0",
