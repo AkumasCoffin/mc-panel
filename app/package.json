@@ -8,7 +8,7 @@
     "postinstall": "node -e \"try{require('fs').mkdirSync('app/public',{recursive:true})}catch(e){}\""
   },
   "dependencies": {
-  "rcon-client": "^5.2.4",
+  "rcon-client": "^5.0.0-alpha.2",
   "express": "^4.19.2",
   "basic-auth": "^2.0.1",
   "dotenv": "^16.4.5",
