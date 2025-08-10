@@ -5,181 +5,211 @@
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Minecraft RCON Panel</title>
 <style>
-:root{
-  --bg:#0b0f14;--panel:#0f1524;--card:#111a2d;--stroke:#1e2a46;--text:#e9f0ff;--muted:#9db0cc;
-  --accent:#2a66ff;--accent-2:#39ff14;--danger:#ff4d57;--warn:#f7b731;--ok:#2ecc71
-}
-*{box-sizing:border-box}html,body{height:100%}
-body{margin:0;background:linear-gradient(180deg,#0b0f14,#0c1220 60%,#0a0f1a);color:var(--text);font:14px/1.5 system-ui,Segoe UI,Roboto,Ubuntu}
-.sidebar{position:fixed;inset:0 auto 0 0;width:260px;background:linear-gradient(180deg,#0f1524,#0b1020);border-right:1px solid var(--stroke);padding:18px}
-.brand{display:flex;gap:10px;align-items:center;margin-bottom:16px}
-.logo{width:28px;height:28px;border-radius:6px;background:radial-gradient(circle at 30% 30%, #48ff48, #146614)}
-.brand h1{font-size:16px;margin:0;color:#cfe2ff}
-.nav a{display:block;padding:10px 12px;border-radius:10px;color:#cbd5e0;text-decoration:none;margin:5px 0;border:1px solid transparent}
-.nav a.active,.nav a:hover{background:#14203a;border-color:#21325a}
-.main{margin-left:260px;min-height:100%;padding:18px}
-.header{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
-.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
-.card{background:var(--card);border:1px solid var(--stroke);border-radius:14px;padding:14px;box-shadow:0 8px 24px rgba(0,0,0,.25)}
-h2{margin:0 0 8px 0;font-size:18px}
-h3{margin:0 0 8px 0;font-size:15px;color:#cfe2ff}
-.small{color:var(--muted);font-size:12px}
-input,select,textarea{width:100%;padding:10px;border-radius:10px;background:#0e1628;border:1px solid var(--stroke);color:#e6f1ff;margin:6px 0}
-textarea{min-height:86px;resize:vertical}
-.btn{background:var(--accent);color:#fff;border:none;border-radius:10px;padding:9px 12px;cursor:pointer}
-.btn.ghost{background:transparent;border:1px solid var(--stroke)}
+:root{--bg:#0b0f14;--card:#121826;--muted:#8390a4;--text:#e9f0ff;--acc:#39ff14;--acc2:#2a66ff;--danger:#ff4757}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,Segoe UI,Roboto,Ubuntu}
+.sidebar{position:fixed;top:0;left:0;bottom:0;width:240px;background:#0d1320;border-right:1px solid #1f2a44;padding:16px}
+.sidebar h1{font-size:16px;margin:0 0 12px 0;color:#b7c0d7}
+.nav a{display:block;padding:10px 12px;border-radius:8px;color:#cbd5e0;text-decoration:none;margin:4px 0}
+.nav a.active,.nav a:hover{background:#15203a;color:#fff}
+.main{margin-left:240px;padding:16px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+.card{background:var(--card);border:1px solid #1f2a44;border-radius:12px;padding:12px}
+.btn{background:var(--acc2);color:#fff;border:none;border-radius:8px;padding:8px 10px;cursor:pointer}
 .btn.danger{background:var(--danger)}
-.btn.ok{background:var(--ok)}
+input,select{width:100%;padding:8px;border-radius:8px;background:#0c1322;border:1px solid #1f2a44;color:#e6f1ff;margin:6px 0}
 table{width:100%;border-collapse:collapse}
-th,td{padding:8px;border-bottom:1px solid #1a2540}th{color:#a9bbd9;text-align:left;font-weight:600}
-.modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;padding:16px}
-.win{background:#0f172a;border:1px solid #223355;border-radius:12px;max-width:900px;width:100%;max-height:85vh;overflow:auto;padding:16px}
-pre{white-space:pre-wrap;background:#0c1426;padding:10px;border-radius:10px}
-.toast{position:fixed;right:16px;bottom:16px;background:#0f172a;border:1px solid #213358;padding:10px 12px;border-radius:10px;display:none}
-.tag{display:inline-block;border:1px solid #2753a6;color:#cfe2ff;background:#0f1c39;border-radius:999px;padding:2px 8px;font-size:12px}
+th,td{padding:8px;border-bottom:1px solid #202a46}
+th{color:#9fb0cf;text-align:left}
+.small{color:#8aa0c8}
+.header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+.tag{display:inline-block;background:#0d7a36;color:#eafff1;padding:2px 6px;border-radius:6px;font-size:12px;margin-left:6px}
+pre{white-space:pre-wrap;background:#0b1325;padding:8px;border-radius:8px}
+.topbar{display:flex;gap:8px;align-items:center;margin-bottom:12px}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.65);display:none;align-items:center;justify-content:center}
+.modal .win{background:#0f172a;border:1px solid #233257;border-radius:12px;max-width:800px;width:90%;padding:16px;max-height:80vh;overflow:auto}
+code{background:#0c1322;border:1px solid #1f2a44;border-radius:6px;padding:1px 4px}
+h3{margin:4px 0 8px}
+h4{margin:12px 0 6px;color:#bcd0ff}
 </style>
 </head>
 <body>
 <div class="sidebar">
-  <div class="brand"><div class="logo"></div><h1>MC RCON Panel</h1></div>
+  <h1>MC RCON Panel</h1>
   <div class="nav">
-    <a href="#" data-page="dash" class="active">🏠 Dashboard</a>
-    <a href="#" data-page="players">👥 Players</a>
-    <a href="#" data-page="bans">🚫 Bans</a>
-    <a href="#" data-page="rest">⏱️ Restarts</a>
-    <a href="#" data-page="cmd">⌨️ Commands</a>
-    <a href="#" data-page="bc">📣 Broadcasts</a>
+    <a href="#" data-page="dash" class="active">Dashboard</a>
+    <a href="#" data-page="players">Players</a>
+    <a href="#" data-page="bans">Bans</a>
+    <a href="#" data-page="rest">Restarts</a>
+    <a href="#" data-page="cmd">Commands</a>
   </div>
 </div>
-
 <div class="main">
-  <!-- Dashboard -->
   <div id="page-dash" class="page">
-    <div class="header">
-      <h2>Dashboard</h2>
-      <button id="btn-emerg" class="btn danger">Emergency Restart</button>
-    </div>
+    <div class="header"><h2>Dashboard</h2><button id="btn-emerg" class="btn danger">Emergency Restart</button></div>
     <div class="cards">
-      <div class="card">
-        <h3>Status</h3>
-        <div>Server: <b id="status">—</b></div>
-        <div>Players: <b id="pcount">—</b></div>
-        <div>Next restart: <span id="next">None</span> <span id="nextRel" class="small"></span></div>
-      </div>
-      <div class="card"><h3>Recent Online</h3><pre id="recent" class="small">—</pre></div>
-      <div class="card">
-        <h3>Quick Broadcast</h3>
-        <input id="bcText" placeholder="Server restarting soon…"/>
-        <div><button id="bcSend" class="btn ok">Send</button> <button id="bcPick" class="btn ghost">Use Preset</button></div>
-      </div>
+      <div class="card"><h3>Status</h3><div id="status">Loading…</div></div>
+      <div class="card"><h3>Online</h3><div id="online">-</div></div>
+      <div class="card"><h3>Next Restart</h3><div id="next">-</div></div>
+      <div class="card"><h3>Recent</h3><pre id="recent" class="small">—</pre></div>
     </div>
   </div>
 
-  <!-- Players -->
   <div id="page-players" class="page" style="display:none">
-    <div class="header"><h2>Players</h2><input id="psearch" placeholder="Search username/IP"/></div>
+    <div class="header"><h2>Players</h2><div class="topbar"><input id="psearch" placeholder="Search username/IP"/></div></div>
     <div class="card">
       <table id="ptbl"><thead><tr><th>Username</th><th>UUID</th><th>Latest IP</th><th>First</th><th>Last</th><th>Playtime</th><th></th></tr></thead><tbody></tbody></table>
     </div>
   </div>
 
-  <!-- Bans -->
   <div id="page-bans" class="page" style="display:none">
     <div class="header"><h2>Bans</h2></div>
     <div class="card">
-      <h3>Ban IP</h3>
       <input id="ban-ip" placeholder="IP to ban (x.x.x.x)"/>
-      <select id="ban-preset"></select>
       <input id="ban-reason" placeholder="Reason (optional)"/>
-      <div><button id="ban-do" class="btn danger">Ban IP</button> <button id="ban-refresh" class="btn ghost">Refresh</button></div>
+      <button id="ban-do" class="btn">Ban IP</button>
+      <div id="bans" style="margin-top:10px"></div>
     </div>
-    <div class="card">
-      <h3>Ban Presets</h3>
-      <input id="ban-label" placeholder="Label (e.g. Cheats)"/>
-      <input id="ban-msg" placeholder="Reason (e.g. Hacked client)"/>
-      <button id="ban-save" class="btn">Save Preset</button>
-      <div class="small" id="ban-presets-note" style="margin-top:6px"></div>
-    </div>
-    <div class="card"><h3>Current Bans</h3><pre id="bans"></pre></div>
   </div>
 
-  <!-- Restarts -->
   <div id="page-rest" class="page" style="display:none">
     <div class="header"><h2>Scheduled Restarts</h2></div>
     <div class="card">
       <table id="stbl"><thead><tr><th>ID</th><th>Cron</th><th>Label</th><th>Enabled</th><th>Actions</th></tr></thead><tbody></tbody></table>
-      <div style="margin-top:8px"><input id="cron" placeholder="Cron (e.g. 0 3 * * *)"/> <input id="label" placeholder="Label (optional)"/> <button id="sadd" class="btn">Add</button> <button id="sref" class="btn ghost">Refresh</button></div>
-      <div class="small" style="margin-top:6px">Tips: <span class="tag">0 3 * * *</span> daily 3:00 · <span class="tag">0 */6 * * *</span> every 6h · <span class="tag">*/30 * * * *</span> every 30m</div>
+      <div class="topbar"><input id="cron" placeholder="Cron (e.g. 0 3 * * *)"/><input id="label" placeholder="Label (optional)"/><button id="sadd" class="btn">Add</button></div>
     </div>
   </div>
 
-  <!-- Commands -->
   <div id="page-cmd" class="page" style="display:none">
     <div class="header"><h2>Commands</h2></div>
-    <div class="card"><input id="cmd" placeholder='say Hello from panel'/> <button id="send" class="btn">Run</button> <pre id="cout"></pre></div>
-  </div>
-
-  <!-- Broadcast presets -->
-  <div id="page-bc" class="page" style="display:none">
-    <div class="header"><h2>Broadcast Presets</h2></div>
-    <div class="card">
-      <input id="bp-label" placeholder="Label (e.g. Maintenance)"/>
-      <textarea id="bp-msg" placeholder="Message (no quotes)"></textarea>
-      <button id="bp-save" class="btn">Save</button>
-    </div>
-    <div class="card">
-      <select id="bp-select"></select>
-      <button id="bp-send" class="btn ok">Send Broadcast</button>
-    </div>
+    <div class="card"><input id="cmd" placeholder="say Hello from web"/><button id="send" class="btn">Run</button><pre id="cout"></pre></div>
   </div>
 </div>
 
-<div id="modal" class="modal"><div class="win"><div id="modal-body"></div><div style="text-align:right;margin-top:8px"><button id="modal-close" class="btn ghost">Close</button></div></div></div>
-<div id="toast" class="toast"></div>
+<div id="modal" class="modal"><div class="win"><div id="modal-body"></div><div style="text-align:right;margin-top:8px"><button id="modal-close" class="btn">Close</button></div></div></div>
 
 <script>
-const pages=['dash','players','bans','rest','cmd','bc'];
-document.querySelectorAll('.nav a').forEach(a=>{a.onclick=(e)=>{e.preventDefault();pages.forEach(p=>document.getElementById('page-'+p).style.display='none');document.querySelectorAll('.nav a').forEach(x=>x.classList.remove('active'));a.classList.add('active');document.getElementById('page-'+a.dataset.page).style.display='block';};});
+const pages=['dash','players','bans','rest','cmd'];
+document.querySelectorAll('.nav a').forEach(a=>{
+  a.onclick=(e)=>{
+    e.preventDefault();
+    pages.forEach(p=>document.getElementById('page-'+p).style.display='none');
+    document.querySelectorAll('.nav a').forEach(x=>x.classList.remove('active'));
+    a.classList.add('active');
+    document.getElementById('page-'+a.dataset.page).style.display='block';
+  };
+});
 function showModal(html){const m=document.getElementById('modal');document.getElementById('modal-body').innerHTML=html;m.style.display='flex';}
 document.getElementById('modal-close').onclick=()=>{document.getElementById('modal').style.display='none';};
-function toast(t){const el=document.getElementById('toast');el.textContent=t;el.style.display='block';setTimeout(()=>el.style.display='none',1600);}
 async function api(p,o){const r=await fetch(p,{credentials:'include',headers:{'Content-Type':'application/json'},...o});if(!r.ok)throw new Error(await r.text());return r.json();}
 function fmtDur(s){s=Number(s||0);const d=Math.floor(s/86400);s%=86400;const h=Math.floor(s/3600);s%=3600;const m=Math.floor(s/60);return (d?d+'d ':'')+h+'h '+m+'m';}
-function relFromSeconds(s){if(s==null)return'';const m=Math.floor(s/60),sec=s%60;if(s>=3600){const h=Math.floor(m/60),rm=m%60;return`in ${h}h ${rm}m`;}if(s>=60)return`in ${m}m ${sec}s`;return`in ${sec}s`;}
 
-document.getElementById('btn-emerg').onclick=async()=>{if(!confirm('Emergency restart now?'))return;await api('/api/restart-now',{method:'POST'}).then(()=>toast('Restart sent')).catch(()=>toast('Failed'));};
+async function refreshStatus(){
+  try{const st=await api('/api/status');
+    document.getElementById('status').textContent=st.online?'Online':'Offline';
+    if(st.next_restart_seconds!=null){
+      const mins=Math.floor(st.next_restart_seconds/60);
+      document.getElementById('next').textContent = st.next_restart_seconds===null ? '—' : (st.next_restart_seconds<60 ? `${st.next_restart_seconds}s` : `${mins}m`);
+    } else {
+      document.getElementById('next').textContent='None';
+    }
+  }catch{}
+}
+async function refreshOnline(){
+  try{const on=await api('/api/online');
+    document.getElementById('online').textContent=`${on.count} players`;
+    document.getElementById('recent').textContent=on.players.map(p=>`${p.username} (${p.uuid||''})`).join('\n')||'—';
+  }catch{}
+}
+async function refreshSchedules(){
+  try{const ss=await api('/api/schedules');
+    const tb=document.querySelector('#stbl tbody');
+    tb.innerHTML=ss.map(s=>`<tr><td>${s.id}</td><td>${s.cron}</td><td>${s.label||''}</td><td>${s.enabled?'yes':'no'}</td><td><button class="t" data-id="${s.id}">Toggle</button> <button class="d" data-id="${s.id}">Delete</button></td></tr>`).join('');
+  }catch{}
+}
+async function refreshPlayers(){
+  try{
+    const ps=await api('/api/players');
+    const q=(document.getElementById('psearch').value||'').toLowerCase();
+    const tb=document.querySelector('#ptbl tbody');
+    tb.innerHTML=ps.filter(p=>!q||p.username.toLowerCase().includes(q)||(p.last_ip||'').includes(q)).map(p=>`<tr>
+      <td>${p.username}</td>
+      <td class="small">${p.uuid||''}</td>
+      <td>${p.last_ip||''}</td>
+      <td class="small">${p.first_seen||''}</td>
+      <td class="small">${p.last_seen||''}</td>
+      <td>${fmtDur(p.total_playtime||0)}</td>
+      <td><button class="v" data-id="${p.id}">View</button></td>
+    </tr>`).join('');
+  }catch{}
+}
+async function refreshBans(){
+  try{
+    const data=await api('/api/bans');
+    function tableFor(arr,title){
+      if(!arr||!arr.length) return `<h4>${title}</h4><div class="small">None</div>`;
+      const rows=arr.map(b=>`<tr><td>${b.target||''}</td><td>${b.by||''}</td><td>${(b.reason||'').replace(/</g,'&lt;')}</td></tr>`).join('');
+      return `<h4>${title}</h4><table><thead><tr><th>Target</th><th>Banned By</th><th>Reason</th></tr></thead><tbody>${rows}</tbody></table>`;
+    }
+    document.getElementById('bans').innerHTML = tableFor(data.players,'Player Bans') + tableFor(data.ips,'IP Bans');
+  }catch{
+    document.getElementById('bans').innerHTML = '<div class="small">Failed to load bans</div>';
+  }
+}
 
-document.getElementById('bcSend').onclick=async()=>{const message=document.getElementById('bcText').value.trim();if(!message)return;await api('/api/broadcast',{method:'POST',body:JSON.stringify({message})}).then(()=>toast('Broadcast sent')).catch(()=>toast('Failed'));};
-document.getElementById('bcPick').onclick=async()=>{const rows=await api('/api/broadcast-presets');if(!rows.length){toast('No presets yet');return;}const html='<h3>Presets</h3><ul>'+rows.map(r=>`<li><button class="btn ghost bp" data-msg="${encodeURIComponent(r.message)}">${r.label}</button></li>`).join('')+'</ul>';showModal(html);};
-document.getElementById('modal-body').onclick=(e)=>{if(e.target.classList.contains('bp')){document.getElementById('bcText').value=decodeURIComponent(e.target.dataset.msg);document.getElementById('modal').style.display='none';}};
+document.getElementById('stbl').onclick=async(e)=>{
+  if(e.target.classList.contains('t')){await api('/api/schedules/'+e.target.dataset.id+'/toggle',{method:'POST'});refreshSchedules();}
+  if(e.target.classList.contains('d')){await api('/api/schedules/'+e.target.dataset.id,{method:'DELETE'});refreshSchedules();}
+};
+document.getElementById('sadd').onclick=async()=>{
+  const cron=document.getElementById('cron').value.trim();
+  const label=document.getElementById('label').value.trim();
+  if(!cron) return;
+  await api('/api/schedules',{method:'POST',body:JSON.stringify({cron,label,enabled:1})});
+  document.getElementById('cron').value='';document.getElementById('label').value='';
+  refreshSchedules();
+};
+document.getElementById('send').onclick=async()=>{
+  const c=document.getElementById('cmd').value.trim(); if(!c) return;
+  const out=await api('/api/command',{method:'POST',body:JSON.stringify({command:c})});
+  document.getElementById('cout').textContent=out.out||JSON.stringify(out);
+};
+document.getElementById('ban-do').onclick=async()=>{
+  const ip=document.getElementById('ban-ip').value.trim();
+  const reason=document.getElementById('ban-reason').value.trim();
+  if(!ip) return;
+  await api('/api/ban-ip',{method:'POST',body:JSON.stringify({ip,reason})});
+  refreshBans();
+};
+document.getElementById('ptbl').onclick=async(e)=>{
+  if(!e.target.classList.contains('v')) return;
+  const id=e.target.dataset.id;
+  const d=await api('/api/player/'+id);
+  const p=d.player;
+  const lines=[];
+  lines.push(`<h3>${p.username} <span class="tag">${p.uuid||''}</span></h3>`);
+  lines.push(`<div class="small">Latest IP: ${p.last_ip||'-'} | First: ${p.first_seen||'-'} | Last: ${p.last_seen||'-'} | Playtime: ${fmtDur(p.total_playtime||0)}</div>`);
+  lines.push('<h4>IPs</h4><ul>'+d.ips.map(x=>`<li>${x.ip} <span class="small">${x.seen_at}</span></li>`).join('')+'</ul>');
+  lines.push('<h4>Sessions</h4><ul>'+d.sessions.map(s=>`<li>${s.login_time} → ${s.logout_time||'(active)'} <span class="small">${s.duration?fmtDur(s.duration):''}</span></li>`).join('')+'</ul>');
+  lines.push('<h4>Commands</h4><ul>'+d.commands.map(c=>`<li>${c.executed_at}: <code>${(c.command||'').replace(/</g,'&lt;')}</code></li>`).join('')+'</ul>');
+  showModal(lines.join(''));
+};
+document.getElementById('btn-emerg').onclick=async()=>{
+  if(!confirm('Emergency restart now?')) return;
+  await api('/api/restart-now',{method:'POST'});
+};
 
-document.getElementById('send').onclick=async()=>{const c=document.getElementById('cmd').value.trim();if(!c)return;const out=await api('/api/command',{method:'POST',body:JSON.stringify({command:c})});document.getElementById('cout').textContent=out.out||JSON.stringify(out);};
-
-document.getElementById('ban-do').onclick=async()=>{const ip=document.getElementById('ban-ip').value.trim();const preset=document.getElementById('ban-preset').value;const manual=document.getElementById('ban-reason').value.trim();const reason=manual||preset||undefined;if(!ip)return toast('Enter IP');await api('/api/ban-ip',{method:'POST',body:JSON.stringify({ip,reason})}).then(()=>{toast('IP banned');refreshBans();}).catch(()=>toast('Failed'));};
-document.getElementById('ban-save').onclick=async()=>{const label=document.getElementById('ban-label').value.trim();const reason=document.getElementById('ban-msg').value.trim();if(!label||!reason)return toast('Fill both');await api('/api/ban-presets',{method:'POST',body:JSON.stringify({label,reason})}).then(()=>{toast('Preset saved');refreshBanPresets();}).catch(()=>toast('Failed'));};
-document.getElementById('ban-refresh').onclick=()=>refreshBans();
-
-document.getElementById('bp-save').onclick=async()=>{const label=document.getElementById('bp-label').value.trim();const message=document.getElementById('bp-msg').value.trim();if(!label||!message)return toast('Fill both');await api('/api/broadcast-presets',{method:'POST',body:JSON.stringify({label,message})}).then(()=>toast('Saved')).catch(()=>toast('Failed'));};
-document.getElementById('bp-send').onclick=async()=>{const sel=document.getElementById('bp-select');const opt=sel.options[sel.selectedIndex];if(!opt)return;await api('/api/broadcast',{method:'POST',body:JSON.stringify({message:opt.dataset.message})}).then(()=>toast('Broadcast sent')).catch(()=>toast('Failed'));};
-
-document.getElementById('stbl').onclick=async(e)=>{if(e.target.classList.contains('t')){await api('/api/schedules/'+e.target.dataset.id+'/toggle',{method:'POST'});refreshSchedules();}if(e.target.classList.contains('d')){await api('/api/schedules/'+e.target.dataset.id,{method:'DELETE'});refreshSchedules();}};
-document.getElementById('sadd').onclick=async()=>{const cron=document.getElementById('cron').value.trim();const label=document.getElementById('label').value.trim();if(!cron)return;await api('/api/schedules',{method:'POST',body:JSON.stringify({cron,label})});document.getElementById('cron').value='';document.getElementById('label').value='';refreshSchedules();};
-document.getElementById('sref').onclick=refreshSchedules;
-
-document.getElementById('psearch').addEventListener('input', refreshPlayers);
-document.getElementById('ptbl').onclick=async(e)=>{if(!e.target.classList.contains('v'))return;const id=e.target.dataset.id;const d=await api('/api/player/'+id);const p=d.player;const lines=[];lines.push(`<h3>${p.username} ${p.uuid?`<span class="tag">${p.uuid}</span>`:''}</h3>`);lines.push(`<div class="small">Latest IP: ${p.last_ip||'-'} · First: ${p.first_seen||'-'} · Last: ${p.last_seen||'-'} · Playtime: ${fmtDur(p.total_playtime||0)}</div>`);lines.push('<h4>IPs</h4><ul>'+d.ips.map(x=>`<li>${x.ip} <span class="small">${x.seen_at}</span></li>`).join('')+'</ul>');lines.push('<h4>Sessions</h4><ul>'+d.sessions.map(s=>`<li>${s.login_time} → ${s.logout_time||'(active)'} <span class="small">${s.duration?fmtDur(s.duration):''}</span></li>`).join('')+'</ul>');lines.push('<h4>Commands</h4><ul>'+d.commands.map(c=>`<li>${c.executed_at}: <code>${(c.command||'').replace(/</g,'&lt;')}</code></li>`).join('')+'</ul>');showModal(lines.join(''));};
-
-async function refreshStatus(){const st=await api('/api/status');document.getElementById('status').textContent=st.online?'Online':'Offline';document.getElementById('next').textContent=st.next_restart_iso?new Date(st.next_restart_iso).toLocaleString():'None';document.getElementById('nextRel').textContent=st.next_restart_seconds!=null?`(${relFromSeconds(st.next_restart_seconds)})`:'';}
-async function refreshOnline(){const on=await api('/api/online');document.getElementById('pcount').textContent=on.count;document.getElementById('recent').textContent=on.players.map(p=>`${p.username} (${p.uuid||''})`).join('\n')||'—';}
-async function refreshPlayers(){const ps=await api('/api/players');const q=(document.getElementById('psearch').value||'').toLowerCase();const tb=document.querySelector('#ptbl tbody');tb.innerHTML=ps.filter(p=>!q||p.username.toLowerCase().includes(q)||(p.last_ip||'').includes(q)).map(p=>`<tr><td>${p.username}</td><td class="small">${p.uuid||''}</td><td>${p.last_ip||''}</td><td class="small">${p.first_seen||''}</td><td class="small">${p.last_seen||''}</td><td>${fmtDur(p.total_playtime||0)}</td><td><button class="v btn ghost" data-id="${p.id}">View</button></td></tr>`).join('');}
-async function refreshBans(){const data=await api('/api/bans');document.getElementById('bans').textContent=JSON.stringify(data,null,2);}
-async function refreshBanPresets(){const rows=await api('/api/ban-presets');const sel=document.getElementById('ban-preset');sel.innerHTML='<option value="">(no preset)</option>'+rows.map(r=>`<option value="${r.reason.replace(/"/g,'&quot;')}">${r.label}</option>`).join('');document.getElementById('ban-presets-note').textContent=rows.length?`${rows.length} preset(s) available.`:'No presets yet.';}
-async function refreshBcPresets(){const rows=await api('/api/broadcast-presets');const sel=document.getElementById('bp-select');sel.innerHTML=rows.map(r=>`<option data-message="${(r.message||'').replace(/"/g,'&quot;')}">${r.label}</option>`).join('');}
-
-async function tick(){try{await refreshStatus();}catch{}try{await refreshOnline();}catch{}try{await refreshPlayers();}catch{}}
-setInterval(tick,2000); tick();
-refreshBans().catch(()=>{});refreshBanPresets().catch(()=>{});refreshBcPresets().catch(()=>{});refreshSchedules().catch(()=>{});
-async function refreshSchedules(){const rows=await api('/api/schedules');const tb=document.querySelector('#stbl tbody');tb.innerHTML=rows.map(r=>`<tr><td>${r.id}</td><td>${r.cron}</td><td>${r.label||''}</td><td>${r.enabled?'yes':'no'}</td><td><button class="t btn ghost" data-id="${r.id}">Toggle</button> <button class="d btn ghost" data-id="${r.id}">Delete</button></td></tr>`).join('');}
+async function tick(){
+  await Promise.all([
+    refreshStatus(),
+    refreshOnline(),
+    refreshSchedules(),
+    refreshPlayers(),
+    refreshBans()
+  ]);
+}
+setInterval(tick, 2000);
+tick();
 </script>
 </body>
 </html>
