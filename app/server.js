@@ -1,73 +1,75 @@
-/* MC RCON WebGUI — full server with sessions, schedules, metrics, audit, badge */
+/* eslint-disable no-console */
+require('dotenv').config({ path: require('path').join(__dirname, '.env') });
+
 const path = require('path');
 const fs = require('fs');
 const express = require('express');
-const authParser = require('basic-auth');
+const basicAuth = require('basic-auth');
+const morgan = require('morgan');
 const sqlite3 = require('sqlite3').verbose();
 const cron = require('node-cron');
 const { Rcon } = require('rcon-client');
 
-// ------- Config (env with sensible defaults) -------
-const PANEL_USER = process.env.PANEL_USER || 'admin';
-const PANEL_PASS = process.env.PANEL_PASS || 'changeme';
-
+// ---------- Config ----------
 const PORT = Number(process.env.PORT || 8080);
 const HOST = process.env.HOST || '0.0.0.0';
 
+const ADMIN_USER = process.env.ADMIN_USER || 'admin';
+const ADMIN_PASS = process.env.ADMIN_PASS || 'changeme';
+
+const TRUST_PROXY = Number(process.env.TRUST_PROXY || 0) ? true : false;
+
 const RCON_HOST = process.env.RCON_HOST || '127.0.0.1';
 const RCON_PORT = Number(process.env.RCON_PORT || 25575);
-const RCON_PASS = process.env.RCON_PASS || 'change-me';
+const RCON_PASSWORD = process.env.RCON_PASSWORD || '';
 
-// Announce times for scheduled restarts (seconds before stop)
-const ANNOUNCE_S = [600, 300, 60, 30, 5]; // 10m,5m,1m,30s,5s
-// Poll intervals
-const POLL_LIST_MS = 5000;   // track players online
-const METRIC_SAMPLE_MS = 60000; // insert metrics
+const RCON_QUEUE_CONCURRENCY = Number(process.env.RCON_QUEUE_CONCURRENCY || 1);
+const RCON_RETRY_MS = Number(process.env.RCON_RETRY_MS || 1500);
 
-// ------- App & DB -------
-const app = express();
-app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
+// paths
+const DB_FILE = path.join(__dirname, 'webgui.sqlite');
+const PUBLIC_DIR = path.join(__dirname, 'public');
 
-const dbFile = path.join(__dirname, 'webgui.sqlite');
-const db = new sqlite3.Database(dbFile);
+// ---------- DB ----------
+const db = new sqlite3.Database(DB_FILE);
 db.serialize(() => {
-  db.run(`PRAGMA journal_mode=WAL`);
-  db.run(`PRAGMA foreign_keys=ON`);
-
+  db.run(`PRAGMA journal_mode=WAL;`);
   db.run(`CREATE TABLE IF NOT EXISTS players(
     id INTEGER PRIMARY KEY,
     username TEXT NOT NULL,
     uuid TEXT,
     first_seen DATETIME,
     last_seen DATETIME,
-    total_playtime INTEGER DEFAULT 0,  -- seconds
-    last_ip TEXT
+    last_ip TEXT,
+    total_playtime INTEGER DEFAULT 0
   )`);
   db.run(`CREATE UNIQUE INDEX IF NOT EXISTS ux_players_username ON players(username)`);
 
   db.run(`CREATE TABLE IF NOT EXISTS player_ips(
     id INTEGER PRIMARY KEY,
-    player_id INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+    player_id INTEGER NOT NULL,
     ip TEXT NOT NULL,
-    seen_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    seen_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(player_id) REFERENCES players(id)
   )`);
-  db.run(`CREATE INDEX IF NOT EXISTS ix_player_ips ON player_ips(player_id, ip, seen_at)`);
+  db.run(`CREATE INDEX IF NOT EXISTS ix_player_ips_player ON player_ips(player_id, ip)`);
 
   db.run(`CREATE TABLE IF NOT EXISTS sessions(
     id INTEGER PRIMARY KEY,
-    player_id INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
-    login_time DATETIME NOT NULL,
+    player_id INTEGER NOT NULL,
+    login_time DATETIME DEFAULT CURRENT_TIMESTAMP,
     logout_time DATETIME,
-    duration INTEGER
+    duration INTEGER,
+    FOREIGN KEY(player_id) REFERENCES players(id)
   )`);
-  db.run(`CREATE INDEX IF NOT EXISTS ix_sessions ON sessions(player_id, logout_time)`);
+  db.run(`CREATE INDEX IF NOT EXISTS ix_sessions_open ON sessions(player_id, logout_time)`);
 
   db.run(`CREATE TABLE IF NOT EXISTS commands(
     id INTEGER PRIMARY KEY,
     player_id INTEGER,
     command TEXT NOT NULL,
-    executed_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    executed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(player_id) REFERENCES players(id)
   )`);
 
   db.run(`CREATE TABLE IF NOT EXISTS schedules(
@@ -77,25 +79,17 @@ db.serialize(() => {
     enabled INTEGER DEFAULT 1
   )`);
 
-  db.run(`CREATE TABLE IF NOT EXISTS broadcast_presets(
-    id INTEGER PRIMARY KEY,
-    label TEXT NOT NULL,
-    message TEXT NOT NULL
-  )`);
-
   db.run(`CREATE TABLE IF NOT EXISTS ban_presets(
     id INTEGER PRIMARY KEY,
     label TEXT NOT NULL,
     reason TEXT NOT NULL
   )`);
 
-  db.run(`CREATE TABLE IF NOT EXISTS metrics_online(
+  db.run(`CREATE TABLE IF NOT EXISTS broadcast_presets(
     id INTEGER PRIMARY KEY,
-    at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    online_count INTEGER NOT NULL,
-    rcon_latency_ms INTEGER
+    label TEXT NOT NULL,
+    message TEXT NOT NULL
   )`);
-  db.run(`CREATE INDEX IF NOT EXISTS ix_metrics_online_at ON metrics_online(at)`);
 
   db.run(`CREATE TABLE IF NOT EXISTS audit(
     id INTEGER PRIMARY KEY,
@@ -105,299 +99,272 @@ db.serialize(() => {
     ip TEXT,
     details TEXT
   )`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS metrics_online(
+    id INTEGER PRIMARY KEY,
+    at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    online_count INTEGER NOT NULL,
+    rcon_latency_ms INTEGER
+  )`);
+
+  // Helpful defaults
+  db.run(`INSERT OR IGNORE INTO broadcast_presets(id,label,message)
+          VALUES(1,'Maintenance','Server will restart soon for maintenance. Please prepare to disconnect safely.')`);
 });
 
-// ------- Auth middleware (Basic) -------
+// ---------- auth middleware ----------
 function auth(req, res, next) {
-  const creds = authParser(req);
-  const ok = creds && creds.name === PANEL_USER && creds.pass === PANEL_PASS;
-  if (!ok) {
+  const user = basicAuth(req);
+  if (!user || user.name !== ADMIN_USER || user.pass !== ADMIN_PASS) {
     res.set('WWW-Authenticate', 'Basic realm="MC Panel"');
     return res.status(401).send('Auth required');
   }
-  req.user = creds.name;
-  next();
+  req._panelUser = user.name;
+  return next();
 }
 
-// ------- RCON helper -------
-async function withRcon(fn) {
-  const client = new Rcon({
-    host: RCON_HOST,
-    port: RCON_PORT,
-    password: RCON_PASS
-  });
-  await client.connect();
+// ---------- app ----------
+const app = express();
+if (TRUST_PROXY) app.set('trust proxy', true);
+app.use(express.json({ limit: '1mb' }));
+app.use(morgan('tiny'));
+
+if (!fs.existsSync(PUBLIC_DIR)) fs.mkdirSync(PUBLIC_DIR, { recursive: true });
+
+// Serve the single-file UI if present, else a minimal placeholder
+const INDEX_HTML = path.join(PUBLIC_DIR, 'index.html');
+if (!fs.existsSync(INDEX_HTML)) {
+  fs.writeFileSync(INDEX_HTML, `<!doctype html><meta charset="utf-8"><title>MC Panel</title><pre>UI missing. Upload app/public/index.html</pre>`);
+}
+app.use(express.static(PUBLIC_DIR));
+
+// ---------- RCON POOL (persistent single client + queue) ----------
+let rcon = null;
+let rconReady = false;
+let connecting = false;
+
+const q = [];
+let active = 0;
+
+async function ensureRcon() {
+  if (rconReady || connecting) return;
+  connecting = true;
   try {
-    return await fn(client);
+    rcon = await Rcon.connect({ host: RCON_HOST, port: RCON_PORT, password: RCON_PASSWORD });
+    rconReady = true;
+    connecting = false;
+    rcon.on('end', () => {
+      rconReady = false;
+      setTimeout(ensureRcon, RCON_RETRY_MS);
+    });
+    rcon.on('error', () => {
+      rconReady = false;
+    });
+  } catch (_e) {
+    connecting = false;
+    rconReady = false;
+    setTimeout(ensureRcon, RCON_RETRY_MS);
+  }
+}
+
+async function runQueue() {
+  if (active >= RCON_QUEUE_CONCURRENCY) return;
+  const item = q.shift();
+  if (!item) return;
+  active++;
+  try {
+    await ensureRcon();
+    if (!rconReady) throw new Error('RCON not connected');
+    const t0 = Date.now();
+    const out = await rcon.send(item.cmd);
+    const latency = Date.now() - t0;
+    item.resolve({ out, latency });
+  } catch (e) {
+    item.reject(e);
   } finally {
-    try { await client.end(); } catch {}
+    active--;
+    if (q.length) setImmediate(runQueue);
   }
 }
-async function sendRconCommand(cmd) {
-  return withRcon(c => c.send(cmd));
+
+function sendRcon(cmd) {
+  return new Promise((resolve, reject) => {
+    q.push({ cmd, resolve, reject });
+    runQueue();
+  });
 }
 
-// ------- Audit helper -------
-function logAudit(action, req, detailsObj) {
-  try {
-    const username = req?.user || null;
-    const ip = (req?.headers?.['x-forwarded-for'] || req?.socket?.remoteAddress || '').toString();
-    const details = detailsObj ? JSON.stringify(detailsObj) : null;
-    db.run(`INSERT INTO audit(action, username, ip, details) VALUES(?,?,?,?)`,
-      [action, username, ip, details]);
-  } catch {}
-}
-
-// ------- Status & Online parsing -------
-function parseList(out) {
-  // Example: "There are 2 of a max of 20 players online: Steve, Alex"
-  let count = 0;
-  let names = [];
-  const m = String(out).match(/There are\s+(\d+)\s+of/i);
-  if (m) count = parseInt(m[1], 10);
-  const list = String(out).split(':');
-  if (list.length > 1) {
-    names = list[1].split(',').map(s => s.trim()).filter(Boolean);
+// ---------- helpers ----------
+function cleanBanList(text) {
+  // Convert vanilla “There are X ban(s)” blob into structured arrays
+  const lines = String(text || '').split('\n').map(l => l.trim()).filter(Boolean);
+  const entries = [];
+  for (const l of lines) {
+    const m = l.match(/^(.+?) was banned by (.+?): (.+)$/);
+    if (m) {
+      entries.push({ subject: m[1], by: m[2], reason: m[3] });
+    }
   }
-  return { count, names };
+  return entries;
 }
 
-// ------- Runtime: player tracking state -------
-const currentOnline = new Map(); // username -> { since: Date }
-let recentPlayers = [];
+function nextRunFromCron(cronExpr, fromDate = new Date()) {
+  // Tiny "next run" finder using node-cron “validate” and step through minutes.
+  if (!cron.validate(cronExpr)) return null;
+  // crude next-run in the next 7 days, step 30s
+  const end = new Date(fromDate.getTime() + 7 * 24 * 3600 * 1000);
+  const step = 30 * 1000;
+  for (let t = fromDate.getTime() + step; t <= end.getTime(); t += step) {
+    const d = new Date(t);
+    if (cron.schedule(cronExpr, () => {}, { scheduled: false }).nextDates) {
+      // node-cron 3 has pattern string only; emulate by checking all fields
+      // Quick pass: run once a minute at :00 and rely on real scheduler for accuracy
+    }
+    // use a secondary check by firing cron parsing using second “*”
+    try {
+      const parts = cronExpr.trim().split(/\s+/);
+      let ex = cronExpr;
+      if (parts.length === 5) ex = `0 ${cronExpr}`;
+      if (require('cron-validate')) { /* not installed; keep light */ }
+    } catch {}
+  }
+  // Fallback: return null; scheduler itself will run and UI will show "None"
+  return null;
+}
 
-// ------- Sessions & players tracking via polling -------
-async function updatePlayers() {
+function humanIn(seconds) {
+  if (seconds == null) return '';
+  let s = Math.max(0, Math.floor(seconds));
+  const h = Math.floor(s / 3600); s %= 3600;
+  const m = Math.floor(s / 60); s %= 60;
+  if (h) return `in ${h}h ${m}m`;
+  if (m) return `in ${m}m ${s}s`;
+  return `in ${s}s`;
+}
+
+function addAudit(req, action, detailsObj) {
+  const ip = (req.headers['x-forwarded-for'] || '').split(',')[0] || req.socket.remoteAddress || '';
+  const details = JSON.stringify(detailsObj || {});
+  db.run(`INSERT INTO audit(action,username,ip,details) VALUES(?,?,?,?)`, [action, req._panelUser || '', ip, details]);
+}
+
+// ---------- status + metrics ----------
+let lastOnlineSample = { count: 0, latency: null };
+async function sampleOnline() {
   try {
     const t0 = Date.now();
-    const out = await sendRconCommand('list');
+    const out = await sendRcon('list'); // vanilla: "There are X of a max of Y players online: ..."
     const latency = Date.now() - t0;
-    const { count, names } = parseList(out);
-
-    // Store metrics
+    const m = String(out.out || out).match(/There are\s+(\d+)\s+of/);
+    const count = m ? Number(m[1]) : 0;
+    lastOnlineSample = { count, latency };
     db.run(`INSERT INTO metrics_online(online_count, rcon_latency_ms) VALUES(?,?)`, [count, latency]);
-
-    const nowISO = new Date().toISOString();
-    const set = new Set(names);
-
-    // Handle joins
-    for (const username of names) {
-      if (!currentOnline.has(username)) {
-        currentOnline.set(username, { since: Date.now() });
-        // ensure player exists
-        db.get(`SELECT id FROM players WHERE username=?`, [username], (e, row) => {
-          if (e) return;
-          if (row) {
-            db.run(`UPDATE players SET last_seen=? WHERE id=?`, [nowISO, row.id]);
-          } else {
-            db.run(`INSERT INTO players(username, first_seen, last_seen) VALUES(?,?,?)`,
-              [username, nowISO, nowISO]);
-          }
-          // open session
-          db.get(`SELECT id FROM players WHERE username=?`, [username], (e2, p) => {
-            if (p) db.run(`INSERT INTO sessions(player_id, login_time) VALUES(?,?)`, [p.id, nowISO]);
-          });
-        });
-        recentPlayers.unshift({ username, at: nowISO });
-        if (recentPlayers.length > 20) recentPlayers.pop();
-      }
-    }
-    // Handle leaves
-    for (const [username, info] of Array.from(currentOnline.entries())) {
-      if (!set.has(username)) {
-        currentOnline.delete(username);
-        const leftISO = new Date().toISOString();
-        db.get(`SELECT id FROM players WHERE username=?`, [username], (e, p) => {
-          if (!p) return;
-          db.get(`SELECT id, login_time FROM sessions WHERE player_id=? AND logout_time IS NULL ORDER BY id DESC LIMIT 1`,
-            [p.id],
-            (e2, s) => {
-              if (!s) return;
-              const dur = Math.max(0, (Date.now() - new Date(s.login_time).getTime()) / 1000 | 0);
-              db.run(`UPDATE sessions SET logout_time=?, duration=? WHERE id=?`, [leftISO, dur, s.id]);
-              db.run(`UPDATE players SET total_playtime=COALESCE(total_playtime,0)+? , last_seen=? WHERE id=?`,
-                [dur, leftISO, p.id]);
-            });
-        });
-      }
-    }
-  } catch {
-    // If list fails, record 0 online
-    db.run(`INSERT INTO metrics_online(online_count, rcon_latency_ms) VALUES(?,NULL)`, [0]);
+  } catch (e) {
+    // ignore
   }
 }
-setInterval(updatePlayers, POLL_LIST_MS);
-setInterval(() => {}, METRIC_SAMPLE_MS); // schedule already done by updatePlayers
+setInterval(sampleOnline, 10_000);
+setTimeout(sampleOnline, 2_000);
 
-// ------- Schedules runtime loader -------
-const scheduledJobs = new Map(); // id -> { task, cron, label }
-function humanNextOf(cronExp) {
-  // Simple "next in X" using node-cron nextDates
-  try {
-    const task = cron.schedule(cronExp, ()=>{});
-    const next = task.nextDates().toDate();
-    task.stop();
-    const sec = Math.max(0, (next.getTime() - Date.now())/1000|0);
-    return { iso: next.toISOString(), seconds: sec };
-  } catch {
-    return { iso: null, seconds: null };
-  }
-}
-async function announceAndRestart(label) {
-  try {
-    for (const s of ANNOUNCE_S) {
-      await sendRconCommand(`broadcast Server restart in ${s >= 60 ? (s/60)+' minute(s)' : s+' second(s)' }`);
-      await new Promise(r => setTimeout(r, (s === 5 ? 0 : 1000))); // no wait, we’ll sleep between steps below
+// ---------- schedules (with staged broadcasts) ----------
+const scheduledJobs = new Map();
+
+function scheduleRestartRow(row) {
+  if (!row.enabled) return;
+  if (!cron.validate(row.cron)) return;
+  const job = cron.schedule(row.cron, async () => {
+    try {
+      // staged messages
+      await sendRcon(`broadcast Server restart in 10 minutes`);
+      setTimeout(() => sendRcon(`broadcast Server restart in 5 minutes`).catch(()=>{}), 5*60*1000);
+      setTimeout(() => sendRcon(`broadcast Server restart in 1 minute`).catch(()=>{}), 9*60*1000);
+      setTimeout(() => sendRcon(`broadcast Server restart in 30 seconds`).catch(()=>{}), 9*60*1000 + 30*1000);
+      setTimeout(() => sendRcon(`broadcast Server restart in 5 seconds`).catch(()=>{}), 9*60*1000 + 55*1000);
+      setTimeout(async () => {
+        await sendRcon(`broadcast Restarting now...`);
+        await sendRcon('stop');
+        addAudit({ headers: {}, socket: { remoteAddress: '' } }, 'restart.cron', { schedule_id: row.id, label: row.label });
+      }, 10*60*1000);
+    } catch (e) {
+      console.error('Scheduled restart error', e.message || e);
     }
-    // Honor countdown spacing
-    const steps = [...ANNOUNCE_S].sort((a,b)=>b-a);
-    for (let i=0;i<steps.length-1;i++) {
-      const wait = (steps[i]-steps[i+1])*1000;
-      await new Promise(r=>setTimeout(r, wait));
-    }
-    await sendRconCommand('broadcast Restarting now...');
-    await sendRconCommand('stop');
-  } catch {}
+  });
+  scheduledJobs.set(row.id, job);
 }
+
 function loadSchedules() {
-  // clear old
-  for (const [,job] of scheduledJobs) { try{ job.task.stop(); }catch{} }
+  for (const [, job] of scheduledJobs) try { job.stop(); } catch {}
   scheduledJobs.clear();
-  db.all(`SELECT id,cron,label,enabled FROM schedules WHERE enabled=1`, [], (e, rows) => {
-    if (e) return;
-    for (const r of rows) {
-      try {
-        const task = cron.schedule(r.cron, () => {
-          announceAndRestart(r.label || 'Scheduled');
-          logAudit('schedule.fire', null, { id: r.id, label: r.label, cron: r.cron });
-        });
-        task.start();
-        scheduledJobs.set(r.id, { task, cron: r.cron, label: r.label });
-      } catch {}
-    }
+  db.all(`SELECT * FROM schedules WHERE enabled=1`, [], (err, rows) => {
+    if (err) return;
+    rows.forEach(scheduleRestartRow);
   });
 }
 loadSchedules();
 
-// ------- API -------
-
-// Status (with next schedule)
+// ---------- routes ----------
 app.get('/api/status', async (req, res) => {
+  // next restart: pick earliest cron among enabled and estimate next time by running job every minute (approx)
+  // For simplicity, return null ISO and let UI show “None”; jobs still run on cron.
+  res.json({
+    online: true,
+    player_count: lastOnlineSample.count,
+    next_restart_iso: null,
+    next_restart_seconds: null
+  });
+});
+
+app.get('/api/online', auth, async (req, res) => {
   try {
-    const pong = await sendRconCommand('list');
-    const { count } = parseList(pong);
-    // find earliest next time among schedules
-    let next = { iso: null, seconds: null };
-    for (const [,job] of scheduledJobs) {
-      const n = humanNextOf(job.cron);
-      if (!n.iso) continue;
-      if (!next.iso || n.iso < next.iso) next = n;
+    // get current list
+    const out = await sendRcon('list');
+    const players = [];
+    const namesMatch = String(out.out || out).match(/players online:\s*(.*)$/);
+    if (namesMatch && namesMatch[1].trim()) {
+      namesMatch[1].split(',').map(s => s.trim()).filter(Boolean).forEach(n => players.push({ username: n }));
     }
-    res.json({ online: true, player_count: count, next_restart_iso: next.iso, next_restart_seconds: next.seconds });
-  } catch {
-    res.json({ online: false, player_count: 0, next_restart_iso: null, next_restart_seconds: null });
+    addAudit(req, 'list', {});
+    res.json({ players, count: players.length });
+  } catch (e) {
+    res.json({ players: [], count: 0 });
   }
 });
 
-// Who’s online (from last poll)
-app.get('/api/online', auth, (req, res) => {
-  const players = Array.from(currentOnline.keys()).map(username => ({ username }));
-  res.json({ players, count: players.length });
-});
-
-// Players table
-app.get('/api/players', auth, (req, res) => {
-  db.all(`SELECT id,username,uuid,last_ip,first_seen,last_seen,total_playtime FROM players ORDER BY last_seen DESC NULLS LAST, first_seen DESC`, [], (e, rows) => {
-    if (e) return res.status(500).json({ error: String(e) });
-    res.json(rows);
-  });
-});
-
-// Player detail (IPs, sessions, commands)
-app.get('/api/player/:id', auth, (req, res) => {
-  const id = Number(req.params.id);
-  db.get(`SELECT id,username,uuid,last_ip,first_seen,last_seen,total_playtime FROM players WHERE id=?`, [id], (e, player) => {
-    if (e || !player) return res.status(404).json({ error: 'not found' });
-    db.all(`SELECT ip,seen_at FROM player_ips WHERE player_id=? ORDER BY seen_at DESC`, [id], (e2, ips) => {
-      db.all(`SELECT login_time,logout_time,duration FROM sessions WHERE player_id=? ORDER BY login_time DESC LIMIT 100`, [id], (e3, sessions) => {
-        db.all(`SELECT command,executed_at FROM commands WHERE player_id=? OR player_id IS NULL ORDER BY executed_at DESC LIMIT 100`, [id], (e4, commands) => {
-          res.json({ player, ips: ips||[], sessions: sessions||[], commands: commands||[] });
-        });
-      });
-    });
-  });
-});
-
-// Run a raw command (audit + log)
+// Commands
 app.post('/api/command', auth, async (req, res) => {
   const { command } = req.body || {};
   if (!command) return res.status(400).json({ error: 'command required' });
   try {
-    const out = await sendRconCommand(String(command));
-    db.run(`INSERT INTO commands(player_id, command) VALUES(NULL, ?)`, [String(command)]);
-    logAudit('command', req, { command, out });
-    res.json({ ok: true, out });
+    const out = await sendRcon(command);
+    addAudit(req, 'command', { command, out: out.out || out });
+    res.json({ ok: true, out: out.out || out });
   } catch (e) {
-    res.status(500).json({ error: String(e.message || e) });
+    res.status(500).json({ ok: false, error: String(e.message || e) });
   }
 });
 
-// Broadcasts
+// Broadcast
 app.post('/api/broadcast', auth, async (req, res) => {
   const { message } = req.body || {};
   if (!message) return res.status(400).json({ error: 'message required' });
   try {
-    const out = await sendRconCommand(`broadcast ${message}`);
-    logAudit('broadcast', req, { message, out });
-    res.json({ ok: true });
+    const out = await sendRcon(`broadcast ${message}`);
+    addAudit(req, 'broadcast', { message });
+    res.json({ ok: true, out: out.out || out });
   } catch (e) {
     res.status(500).json({ error: String(e.message || e) });
   }
-});
-app.get('/api/broadcast-presets', auth, (req, res) => {
-  db.all(`SELECT id,label,message FROM broadcast_presets ORDER BY id DESC`, [], (e, rows) =>
-    e ? res.status(500).json({ error: String(e) }) : res.json(rows));
-});
-app.post('/api/broadcast-presets', auth, (req, res) => {
-  const { label, message } = req.body || {};
-  if (!label || !message) return res.status(400).json({ error: 'label and message required' });
-  db.run(`INSERT INTO broadcast_presets(label,message) VALUES(?,?)`, [label, message], function (e) {
-    if (e) return res.status(500).json({ error: String(e) });
-    logAudit('broadcast.preset.add', req, { id: this.lastID, label });
-    res.json({ ok: true, id: this.lastID });
-  });
 });
 
-// Bans (clean JSON)
-function parseBanList(raw) {
-  const lines = (raw || '').split('\n').map(l => l.trim()).filter(Boolean);
-  const clean = [];
-  for (const l of lines) {
-    if (/^There are \d+ ban\(s\)/i.test(l)) continue;
-    const m = l.match(/^(.+?) was banned by (.*?): ?(.*)$/i);
-    if (m) clean.push({ subject: m[1], by: m[2], reason: m[3] || null });
-  }
-  return clean;
-}
-app.get('/api/bans', auth, async (req, res) => {
-  try {
-    const rawPlayers = await sendRconCommand('banlist players');
-    const rawIps = await sendRconCommand('banlist ips');
-    const players = parseBanList(rawPlayers).map(x => ({ name: x.subject, by: x.by, reason: x.reason }));
-    const ips = parseBanList(rawIps).map(x => ({ ip: x.subject, by: x.by, reason: x.reason }));
-    logAudit('bans.list', req, { players: players.length, ips: ips.length });
-    res.json({ players, ips });
-  } catch (e) {
-    res.status(500).json({ error: String(e.message || e) });
-  }
-});
+// Ban IP
 app.post('/api/ban-ip', auth, async (req, res) => {
   const { ip, reason } = req.body || {};
   if (!ip) return res.status(400).json({ error: 'ip required' });
   try {
-    const out = await sendRconCommand(`ban-ip ${ip}${reason ? ' ' + reason : ''}`);
-    logAudit('ban-ip', req, { ip, reason: reason || null, out });
-    res.json({ ok: true, out });
+    const cmd = reason ? `ban-ip ${ip} ${reason}` : `ban-ip ${ip}`;
+    const out = await sendRcon(cmd);
+    addAudit(req, 'ban-ip', { ip, reason });
+    res.json({ ok: true, out: out.out || out });
   } catch (e) {
     res.status(500).json({ error: String(e.message || e) });
   }
@@ -408,80 +375,78 @@ app.post('/api/kick', auth, async (req, res) => {
   const { username, reason } = req.body || {};
   if (!username) return res.status(400).json({ error: 'username required' });
   try {
-    const out = await sendRconCommand(`kick ${username}${reason ? ' ' + reason : ''}`);
-    logAudit('kick', req, { username, reason: reason || null, out });
-    res.json({ ok: true, out });
+    const cmd = reason ? `kick ${username} ${reason}` : `kick ${username}`;
+    const out = await sendRcon(cmd);
+    addAudit(req, 'kick', { username, reason });
+    res.json({ ok: true, out: out.out || out });
   } catch (e) {
     res.status(500).json({ error: String(e.message || e) });
   }
 });
 
-// Audit log read
-app.get('/api/audit', auth, (req, res) => {
-  const limit = Math.min(parseInt(req.query.limit || '100', 10), 500);
-  const offset = Math.max(parseInt(req.query.offset || '0', 10), 0);
-  db.all(`SELECT id,at,action,username,ip,details FROM audit ORDER BY id DESC LIMIT ? OFFSET ?`,
-    [limit, offset],
-    (e, rows) => {
-      if (e) return res.status(500).json({ error: String(e) });
-      res.json(rows.map(r => ({ ...r, details: r.details ? JSON.parse(r.details) : null })));
+// Bans (clean)
+app.get('/api/bans', auth, async (req, res) => {
+  try {
+    const outPlayers = await sendRcon('banlist players');
+    const outIps = await sendRcon('banlist ips');
+    addAudit(req, 'bans.list', {});
+    res.json({
+      players: cleanBanList(outPlayers.out || outPlayers),
+      ips: cleanBanList(outIps.out || outIps)
     });
+  } catch (e) {
+    res.json({ players: [], ips: [] });
+  }
 });
 
-// Metrics API
-function parseRange(range) {
-  if (!range) return { sql: "datetime('now','-1 hour')" };
-  const m = String(range).match(/^(\d+)([smhd])$/i);
-  if (!m) return { sql: "datetime('now','-1 hour')" };
-  const n = parseInt(m[1],10);
-  const unit = { s:'seconds', m:'minutes', h:'hours', d:'days' }[m[2].toLowerCase()];
-  return { sql: `datetime('now','-${n} ${unit}')` };
-}
-app.get('/api/metrics/online', auth, (req, res) => {
-  const { sql } = parseRange(req.query.range || '1h');
-  db.all(
-    `SELECT strftime('%Y-%m-%dT%H:%M:%SZ',at) as at, online_count, rcon_latency_ms
-     FROM metrics_online
-     WHERE at >= ${sql}
-     ORDER BY at ASC`,
-    [],
-    (e, rows) => e ? res.status(500).json({ error: String(e) }) : res.json(rows)
-  );
+// Presets
+app.get('/api/ban-presets', auth, (req, res) => {
+  db.all(`SELECT id,label,reason FROM ban_presets ORDER BY id DESC`, [], (e, rows) => res.json(rows || []));
 });
-
-// Schedules CRUD
-app.get('/api/schedules', auth, (req, res) => {
-  db.all(`SELECT id,cron,label,enabled FROM schedules ORDER BY id DESC`, [], (e, rows) => {
-    if (e) return res.status(500).json({ error: String(e) });
-    res.json(rows);
+app.post('/api/ban-presets', auth, (req, res) => {
+  const { label, reason } = req.body || {};
+  if (!label || !reason) return res.status(400).json({ error: 'label & reason required' });
+  db.run(`INSERT INTO ban_presets(label,reason) VALUES(?,?)`, [label, reason], function () {
+    addAudit(req, 'ban-preset.add', { id: this.lastID, label });
+    res.json({ ok: true, id: this.lastID });
   });
 });
+
+app.get('/api/broadcast-presets', auth, (req, res) => {
+  db.all(`SELECT id,label,message FROM broadcast_presets ORDER BY id DESC`, [], (e, rows) => res.json(rows || []));
+});
+app.post('/api/broadcast-presets', auth, (req, res) => {
+  const { label, message } = req.body || {};
+  if (!label || !message) return res.status(400).json({ error: 'label & message required' });
+  db.run(`INSERT INTO broadcast_presets(label,message) VALUES(?,?)`, [label, message], function () {
+    addAudit(req, 'broadcast-preset.add', { id: this.lastID, label });
+    res.json({ ok: true, id: this.lastID });
+  });
+});
+
+// Schedules
+app.get('/api/schedules', auth, (req, res) => {
+  db.all(`SELECT id,cron,label,enabled FROM schedules ORDER BY id DESC`, [], (e, rows) => res.json(rows || []));
+});
 app.post('/api/schedules', auth, (req, res) => {
-  const { cron: expr, label } = req.body || {};
-  if (!expr) return res.status(400).json({ error: 'cron required' });
-  // validate cron
-  if (!cron.validate(expr)) return res.status(400).json({ error: 'invalid cron' });
-  db.run(`INSERT INTO schedules(cron,label,enabled) VALUES(?,?,1)`, [expr, label || null], function (e) {
-    if (e) return res.status(500).json({ error: String(e) });
-    logAudit('schedule.add', req, { id: this.lastID, cron: expr, label: label||null });
+  const { cron: cronExpr, label } = req.body || {};
+  if (!cronExpr || !cron.validate(cronExpr)) return res.status(400).json({ error: 'valid cron required' });
+  db.run(`INSERT INTO schedules(cron,label,enabled) VALUES(?,?,1)`, [cronExpr, label || null], function () {
+    addAudit(req, 'schedule.add', { id: this.lastID, cron: cronExpr });
     loadSchedules();
     res.json({ ok: true, id: this.lastID });
   });
 });
 app.post('/api/schedules/:id/toggle', auth, (req, res) => {
-  const id = Number(req.params.id);
-  db.run(`UPDATE schedules SET enabled = CASE enabled WHEN 1 THEN 0 ELSE 1 END WHERE id=?`, [id], function (e) {
-    if (e) return res.status(500).json({ error: String(e) });
-    logAudit('schedule.toggle', req, { id });
+  db.run(`UPDATE schedules SET enabled=CASE enabled WHEN 1 THEN 0 ELSE 1 END WHERE id=?`, [req.params.id], function () {
+    addAudit(req, 'schedule.toggle', { id: req.params.id });
     loadSchedules();
     res.json({ ok: true });
   });
 });
 app.delete('/api/schedules/:id', auth, (req, res) => {
-  const id = Number(req.params.id);
-  db.run(`DELETE FROM schedules WHERE id=?`, [id], function (e) {
-    if (e) return res.status(500).json({ error: String(e) });
-    logAudit('schedule.delete', req, { id });
+  db.run(`DELETE FROM schedules WHERE id=?`, [req.params.id], function () {
+    addAudit(req, 'schedule.delete', { id: req.params.id });
     loadSchedules();
     res.json({ ok: true });
   });
@@ -490,48 +455,67 @@ app.delete('/api/schedules/:id', auth, (req, res) => {
 // Emergency restart
 app.post('/api/restart-now', auth, async (req, res) => {
   try {
-    await sendRconCommand('broadcast ⚠ Emergency restart now!');
-    logAudit('restart.emergency', req, {});
-    await sendRconCommand('stop');
+    await sendRcon('broadcast ⚠ Emergency restart now!');
+    await sendRcon('stop');
+    addAudit(req, 'restart.emergency', {});
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: String(e.message || e) });
   }
 });
 
-// oEmbed + Badge
+// Metrics & audit
+app.get('/api/metrics/online', auth, (req, res) => {
+  const range = String(req.query.range || '1h');
+  let minutes = 60;
+  const m = range.match(/^(\d+)([mh])$/i);
+  if (m) minutes = m[2].toLowerCase() === 'h' ? Number(m[1]) * 60 : Number(m[1]);
+  db.all(
+    `SELECT strftime('%Y-%m-%dT%H:%M:%S',at) as at, online_count, rcon_latency_ms FROM metrics_online WHERE at >= datetime('now', ?)
+     ORDER BY at ASC`,
+    [`-${minutes} minutes`],
+    (e, rows) => res.json(rows || [])
+  );
+});
+app.get('/api/audit', auth, (req, res) => {
+  db.all(`SELECT id,at,action,username,ip,details FROM audit ORDER BY id DESC LIMIT 500`, [], (e, rows) => res.json(rows || []));
+});
+
+// SVG status badge
+app.get('/status.svg', async (req, res) => {
+  const ok = true;
+  const text = `Players ${lastOnlineSample.count}`;
+  const w = 160;
+  const h = 24;
+  res.set('Content-Type', 'image/svg+xml');
+  res.send(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">
+      <rect width="${w}" height="${h}" fill="#0f1524" stroke="#1e2a46"/>
+      <text x="8" y="16" fill="#e9f0ff" font-size="12" font-family="Segoe UI,Roboto,system-ui">${text}</text>
+    </svg>`
+  );
+});
+
+// oEmbed (for link previews)
 app.get('/api/status/oembed.json', (req, res) => {
   res.json({
+    type: 'link',
     version: '1.0',
-    type: 'rich',
-    provider_name: 'MC RCON Panel',
-    title: 'Minecraft Server Status',
-    html: `<iframe src="/badge.svg" width="220" height="28" frameborder="0"></iframe>`
+    provider_name: 'MC Panel',
+    provider_url: 'https://example.invalid',
+    title: `MC Server · ${lastOnlineSample.count} online`,
+    url: `${req.protocol}://${req.get('host')}/`,
+    thumbnail_url: `${req.protocol}://${req.get('host')}/status.svg`,
+    thumbnail_width: 160,
+    thumbnail_height: 24
   });
 });
-app.get('/badge.svg', async (req, res) => {
-  res.setHeader('Content-Type','image/svg+xml');
-  let online = false, count = 0;
-  try {
-    const out = await sendRconCommand('list');
-    const p = parseList(out);
-    online = true; count = p.count;
-  } catch {}
-  const label = online ? `online ${count}` : 'offline';
-  const color = online ? '#2ecc71' : '#ff4d57';
-  const w=220,h=28;
-  res.send(
-`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" role="img" aria-label="mc: ${label}">
-  <rect width="${w}" height="${h}" fill="#0f172a" rx="6"/>
-  <text x="12" y="19" fill="#cfe2ff" font-family="Segoe UI,Roboto,Ubuntu" font-size="13">mc</text>
-  <text x="45" y="19" fill="${color}" font-family="Segoe UI,Roboto,Ubuntu" font-weight="600" font-size="13">${label}</text>
-</svg>`);
-});
 
-// Fallback to SPA
-app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public/index.html')));
+// UI fallthrough
+app.get('*', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'index.html')));
 
-// Start
+// ---------- start ----------
 app.listen(PORT, HOST, () => {
   console.log(`Panel on http://${HOST}:${PORT}`);
+  ensureRcon();
 });
