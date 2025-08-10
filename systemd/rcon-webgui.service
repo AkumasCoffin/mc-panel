@@ -1,14 +1,16 @@
 [Unit]
-Description=Minecraft RCON WebGUI
+Description=Minecraft WebGUI (RCON/log panel)
 After=network.target
 
 [Service]
-User=root
-Environment=NODE_ENV=production
-WorkingDirectory=/opt/mc-rcon-webgui
-ExecStart=/usr/bin/node app/server.js
+Type=simple
+WorkingDirectory=/opt/mc-rcon-webgui/app
+EnvironmentFile=/opt/mc-rcon-webgui/app/.env
+ExecStart=/usr/bin/node /opt/mc-rcon-webgui/app/server.js
 Restart=always
-RestartSec=3
+RestartSec=2
+# NOTE: runs as root by default (matches your helper scripts).
+# For hardening, set User=mcgui and grant sudo below.
 
 [Install]
 WantedBy=multi-user.target
