@@ -567,11 +567,11 @@
       if(active==='audit') loadAudit();
     });
 
-    // Initial load - manual trigger only
-    // setTimeout(() => {
-    //   loadStatus(); loadOnline(true);
-    //   setInterval(()=>{ loadStatus(); loadOnline(true); }, 30000); // Refresh every 30s
-    // }, 1000);
+    // Initial load with automatic refresh
+    setTimeout(() => {
+      loadStatus(); loadOnline(true);
+      setInterval(()=>{ loadStatus(); loadOnline(true); }, 30000); // Refresh every 30s
+    }, 1000);
   </script>
 </body>
 </html>
