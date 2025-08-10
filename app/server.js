@@ -1,357 +1,241 @@
 // app/server.js
-// MC RCON Panel - minimal, stable server with tidy APIs and one RCON connection.
-//
-// What this file does:
-// - Loads config from env (or .env if present)
-// - Keeps ONE shared RCON connection with backoff, queued commands (prevents log spam)
-// - Serves UI from /app/public/index.html
-// - Basic auth for all /api/* routes
-// - Endpoints:
-//     GET  /api/status      -> { online, player_count, next_restart_iso, next_restart_seconds }
-//     GET  /api/online      -> { count, players:[{username, uuid}] }
-//     POST /api/command     -> { ok, out }
-//     GET  /api/bans        -> { players:[...], ips:[...] }
-//     GET  /api/players     -> rows from DB (if present) else []
-//     GET  /api/player/:id  -> { player, ips, sessions, commands } (DB-backed if present)
-//
-// Notes:
-// - Works with rcon-client ^5.x (e.g. 5.2.4). If your package.json was pointing to ^6 or 4.3.6, set it to "^5.2.4".
-// - If SQLite tables aren't present, player-related endpoints just return empty lists (no crashes).
-// - UI lives in /app/public (index.html must be there).
+// Minimal, robust API + UI server for MC RCON Panel
 
-"use strict";
+require('dotenv').config(); // optional, safe if no .env present
+const path = require('path');
+const fs = require('fs');
+const express = require('express');
+const basicAuth = require('basic-auth');
+const { Rcon } = require('rcon-client'); // npm i rcon-client@5.1.0 (or 5.2.x if available)
 
-const path = require("path");
-const fs = require("fs");
-const http = require("http");
-const express = require("express");
-const basicAuth = require("basic-auth");
-
-// Optional .env
-try { require("dotenv").config(); } catch (_) {}
-
-const {
-  PANEL_USER = "admin",
-  PANEL_PASS = "changeme",
-  HOST = "0.0.0.0",
-  PORT = "8080",
-
-  RCON_HOST = "127.0.0.1",
-  RCON_PORT = "25575",
-  RCON_PASS = "password",
-
-  // Optional: for “next restart” if you wire a scheduler later
-  NEXT_RESTART_ISO = "",   // e.g. "2025-08-10T12:00:00Z"
-  NEXT_RESTART_SEC = "",   // e.g. "3600" (seconds)
-
-  // Optional: path to latest.log (not strictly required in this file)
-  SERVER_LOG = "",
-
-  // Queue pacing (ms) to avoid RCON floods
-  RCON_MIN_GAP_MS = "900",
-} = process.env;
-
-// ---- RCON client (5.x) -----------------------------------------------------
-const { Rcon } = require("rcon-client");
-
-// Shared RCON instance + simple queue so we don't hammer the server.
-let rcon = null;
-let rconConnecting = false;
-let lastSentAt = 0;
-const queue = [];
-let processing = false;
-
-async function ensureRcon() {
-  if (rcon && rcon.connected) return rcon;
-  if (rconConnecting) {
-    // wait until connection finishes
-    await new Promise((res) => setTimeout(res, 200));
-    return ensureRcon();
-  }
-  rconConnecting = true;
-  try {
-    const client = new Rcon({
-      host: RCON_HOST,
-      port: Number(RCON_PORT),
-      password: RCON_PASS,
-      // keepAlive: true is default; we’ll also handle errors
-    });
-    client.on("end", () => {
-      // allow reconnect on demand
-      rcon = null;
-    });
-    client.on("error", (e) => {
-      // don’t spam console; brief note is fine
-      console.error("[RCON] error:", String(e && e.message || e));
-    });
-    await client.connect();
-    rcon = client;
-    return rcon;
-  } finally {
-    rconConnecting = false;
-  }
-}
-
-function enqueue(cmd) {
-  return new Promise((resolve) => {
-    queue.push({ cmd, resolve });
-    if (!processing) processQueue();
-  });
-}
-
-async function processQueue() {
-  if (processing) return;
-  processing = true;
-  while (queue.length) {
-    const { cmd, resolve } = queue.shift();
-    try {
-      const now = Date.now();
-      const gap = Number(RCON_MIN_GAP_MS) || 900;
-      const wait = Math.max(0, gap - (now - lastSentAt));
-      if (wait) await new Promise((r) => setTimeout(r, wait));
-      const client = await ensureRcon();
-      lastSentAt = Date.now();
-      const out = await client.send(cmd);
-      resolve({ ok: true, out: out || "" });
-    } catch (e) {
-      resolve({ ok: false, out: String(e && e.message || e) });
-    }
-  }
-  processing = false;
-}
-
-// Helper: send one RCON command safely.
-async function rconSend(cmd) {
-  return enqueue(cmd);
-}
-
-// ---- Express app ------------------------------------------------------------
 const app = express();
+
+// ---------- Config ----------
+const PANEL_USER = process.env.PANEL_USER || 'admin';
+const PANEL_PASS = process.env.PANEL_PASS || 'changeme';
+
+const RCON_HOST = process.env.RCON_HOST || '127.0.0.1';
+const RCON_PORT = Number(process.env.RCON_PORT || 25575);
+const RCON_PASS = process.env.RCON_PASS || '';
+const RCON_TIMEOUT_MS = Number(process.env.RCON_TIMEOUT_MS || 3000);
+const RCON_KEEP_MS = Number(process.env.RCON_KEEP_MS || 5000); // how long to keep the connection alive
+
+const PORT = Number(process.env.PORT || 8080);
+const HOST = process.env.HOST || '0.0.0.0';
+
 app.use(express.json());
 
-// Basic auth for /api/*
+// ---------- Basic Auth (API only) ----------
 function requireAuth(req, res, next) {
-  const creds = basicAuth(req);
-  if (!creds || creds.name !== PANEL_USER || creds.pass !== PANEL_PASS) {
-    res.set("WWW-Authenticate", 'Basic realm="panel"');
-    return res.status(401).send("Authentication required.");
+  const cred = basicAuth(req);
+  if (!cred || cred.name !== PANEL_USER || cred.pass !== PANEL_PASS) {
+    res.set('WWW-Authenticate', 'Basic realm="panel"');
+    return res.status(401).send('Authentication required.');
   }
   next();
 }
 
-// ---- Parsers ----------------------------------------------------------------
-function parseListOutput(text) {
-  // typical: "There are 2 of a max of 50 players online: name1, name2"
-  // or "There are 0 of a max of 50 players online"
-  const line = (text || "").trim();
-  let count = 0;
-  let names = [];
+// ---------- RCON: tiny connection pool ----------
+let rconConn = null;
+let rconBusy = false;
+let rconLastUse = 0;
 
-  const m = line.match(/There\s+are\s+(\d+)\s+of\s+a\s+max\s+of\s+\d+\s+players\s+online(?::\s*(.*))?/i);
-  if (m) {
-    count = parseInt(m[1], 10);
-    if (m[2]) {
-      names = m[2].split(",").map(s => s.trim()).filter(Boolean);
-    }
-  } else if (/There are 0/i.test(line)) {
-    count = 0;
-  }
-  // Ensure players is array of objects: {username, uuid}
-  const players = names.map(n => ({ username: n, uuid: null }));
-  return { count, players };
+async function getRcon() {
+  const now = Date.now();
+
+  // Reuse if we have a connection and it's "fresh"
+  if (rconConn && (now - rconLastUse < RCON_KEEP_MS)) return rconConn;
+
+  // Otherwise, (re)connect
+  await closeRconSafe();
+
+  const conn = new Rcon({
+    host: RCON_HOST,
+    port: RCON_PORT,
+    password: RCON_PASS
+  });
+
+  await conn.connect();
+  rconConn = conn;
+  rconLastUse = now;
+
+  // On error, drop it
+  conn.on('end', () => { rconConn = null; });
+  conn.on('error', () => { rconConn = null; });
+
+  return rconConn;
 }
 
-function cleanBanList(text, type) {
-  // Vanilla-ish outputs:
-  // "There are X ban(s):"
-  // "<name|ip> was banned by <by>: <reason>."
-  // Or sometimes without ":" if operator set custom message
-  const out = [];
-  const lines = (text || "").split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-  for (const line of lines) {
-    if (/^There are \d+ ban\(s\):/i.test(line)) continue;
+async function closeRconSafe() {
+  if (rconConn) {
+    try { await rconConn.end(); } catch (_) {}
+  }
+  rconConn = null;
+}
 
-    // Try match: "foo was banned by Server: Reason text"
-    // Also accept IP targets.
-    let m = line.match(/^(.+?)\s+was\s+banned\s+by\s+(.+?)(?::\s*(.*))?$/i);
-    if (m) {
-      const target = (m[1] || "").trim();
-      const by = (m[2] || "").trim();
-      const reason = (m[3] || "").trim() || "No reason provided";
-      out.push({
-        type,
-        target,
-        username: type === "player" ? target : null,
-        uuid: null,
-        last_ip: type === "ip" ? target : null,
-        by,
-        reason,
-        banned_at: null
+async function rconQuery(cmd) {
+  // Simple mutex so we don’t hammer the server
+  while (rconBusy) {
+    await new Promise(r => setTimeout(r, 20));
+  }
+  rconBusy = true;
+  try {
+    const conn = await getRcon();
+    const res = await Promise.race([
+      conn.send(cmd),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('RCON timeout')), RCON_TIMEOUT_MS))
+    ]);
+    rconLastUse = Date.now();
+    return String(res || '');
+  } finally {
+    rconBusy = false;
+  }
+}
+
+// ---------- Helpers ----------
+function parseList(raw) {
+  // Works with vanilla/Forge “list” format:
+  // "There are 2 of a max of 50 players online: name1, name2"
+  const out = { count: 0, players: [] };
+  if (!raw) return out;
+
+  // count
+  const mCount = raw.match(/There are\s+(\d+)\s+of/i);
+  if (mCount) out.count = Number(mCount[1] || 0);
+
+  // names
+  const parts = raw.split('players online:');
+  if (parts.length > 1) {
+    const namesStr = parts[1].trim();
+    if (namesStr.length > 0) {
+      namesStr.split(',').map(s => s.trim()).filter(Boolean).forEach(n => {
+        out.players.push({ username: n });
       });
     }
   }
   return out;
 }
 
-// ---- API --------------------------------------------------------------------
-app.get("/api/status", requireAuth, async (req, res) => {
-  // We'll use LIST to infer "online" and latency.
-  const t0 = Date.now();
-  const resp = await rconSend("list");
-  const latency = Date.now() - t0;
+// ---------- API routes (mounted BEFORE static) ----------
+const api = express.Router();
+api.use(requireAuth);
 
-  let online = false;
-  let player_count = 0;
-  if (resp.ok) {
-    const parsed = parseListOutput(resp.out);
-    online = true;               // If RCON answered, server is up
-    player_count = parsed.count;
-  }
-
-  // Optional restart data if provided by scheduler elsewhere.
-  const next_restart_iso = NEXT_RESTART_ISO || null;
-  const next_restart_seconds = NEXT_RESTART_SEC ? Number(NEXT_RESTART_SEC) : null;
-
-  res.json({ online, player_count, rcon_latency_ms: latency, next_restart_iso, next_restart_seconds });
-});
-
-app.get("/api/online", requireAuth, async (req, res) => {
-  const resp = await rconSend("list");
-  if (!resp.ok) return res.json({ count: 0, players: [] });
-  const parsed = parseListOutput(resp.out);
-  // Make sure we NEVER send “undefined ()”
-  const players = parsed.players.map(p => ({
-    username: p.username || "(unknown)",
-    uuid: p.uuid || null
-  }));
-  res.json({ count: parsed.count || players.length, players });
-});
-
-app.post("/api/command", requireAuth, async (req, res) => {
-  const { command } = req.body || {};
-  if (!command || typeof command !== "string") {
-    return res.status(400).json({ ok: false, out: "Missing command string" });
-  }
-  const out = await rconSend(command);
-  res.json(out);
-});
-
-app.get("/api/bans", requireAuth, async (req, res) => {
-  const rvPlayers = await rconSend("banlist players");
-  const rvIps = await rconSend("banlist ips");
-  const players = rvPlayers.ok ? cleanBanList(rvPlayers.out, "player") : [];
-  const ips = rvIps.ok ? cleanBanList(rvIps.out, "ip") : [];
-  res.json({ players, ips });
-});
-
-// ---- Optional DB-backed endpoints ------------------------------------------
-const sqlite3 = require("sqlite3").verbose();
-const DB_PATH = path.join(__dirname, "webgui.sqlite");
-
-function hasTable(db, table) {
-  return new Promise((resolve) => {
-    db.get(
-      "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-      [table],
-      (err, row) => resolve(!err && !!row)
-    );
-  });
-}
-
-async function openDbIfAny() {
+// Health/basic status
+api.get('/status', async (req, res) => {
   try {
-    if (!fs.existsSync(DB_PATH)) return null;
-    const db = new sqlite3.Database(DB_PATH);
-    // We’ll check for a basic “players” table to decide if usable
-    const ok = await hasTable(db, "players");
-    if (!ok) { db.close(); return null; }
-    return db;
-  } catch {
-    return null;
+    // If RCON responds to "list", consider server "online"
+    let online = false;
+    try {
+      const raw = await rconQuery('list');
+      online = raw && raw.toLowerCase().includes('players online');
+    } catch (_) { online = false; }
+
+    res.json({
+      online,
+      // If you later implement schedules, fill these:
+      next_restart_iso: null,
+      next_restart_seconds: null
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message || String(e) });
   }
-}
-
-app.get("/api/players", requireAuth, async (req, res) => {
-  const db = await openDbIfAny();
-  if (!db) return res.json([]);
-  db.all(
-    `SELECT id, username, uuid, first_seen, last_seen, total_playtime, last_ip
-     FROM players
-     ORDER BY COALESCE(last_seen, first_seen) DESC NULLS LAST`,
-    (err, rows) => {
-      if (err) return res.json([]);
-      // Hard guard against null username to stop UI “undefined ()”
-      rows = (rows || []).map(r => ({
-        id: r.id,
-        username: r.username || "(unknown)",
-        uuid: r.uuid || null,
-        first_seen: r.first_seen || null,
-        last_seen: r.last_seen || null,
-        total_playtime: r.total_playtime || 0,
-        last_ip: r.last_ip || null
-      }));
-      res.json(rows);
-    }
-  );
 });
 
-app.get("/api/player/:id", requireAuth, async (req, res) => {
-  const id = Number(req.params.id);
-  const db = await openDbIfAny();
-  if (!db || !Number.isFinite(id)) {
-    return res.json({ player: null, ips: [], sessions: [], commands: [] });
+// Online snapshot via RCON
+api.get('/online', async (req, res) => {
+  try {
+    const raw = await rconQuery('list');
+    const parsed = parseList(raw);
+    res.json(parsed);
+  } catch (e) {
+    res.status(500).json({ error: e.message || String(e) });
   }
-  db.get(
-    "SELECT id, username, uuid, first_seen, last_seen, total_playtime, last_ip FROM players WHERE id=?",
-    [id],
-    (err, player) => {
-      if (err || !player) return res.json({ player: null, ips: [], sessions: [], commands: [] });
-      player.username = player.username || "(unknown)";
-      player.uuid = player.uuid || null;
-      player.first_seen = player.first_seen || null;
-      player.last_seen = player.last_seen || null;
-      player.total_playtime = player.total_playtime || 0;
-      player.last_ip = player.last_ip || null;
+});
 
-      // Collect the three related lists if tables exist; otherwise return empty arrays.
-      const out = { player, ips: [], sessions: [], commands: [] };
-      const maybe = async (tbl, sql, args) =>
-        (await hasTable(db, tbl))
-          ? new Promise((resolve) => db.all(sql, args, (_, rows) => resolve(rows || [])))
-          : [];
-
-      Promise.all([
-        maybe("player_ips", "SELECT ip, seen_at FROM player_ips WHERE player_id=? ORDER BY seen_at DESC LIMIT 200", [id]),
-        maybe("sessions", "SELECT login_time, logout_time, duration FROM sessions WHERE player_id=? ORDER BY COALESCE(logout_time, login_time) DESC LIMIT 200", [id]),
-        maybe("commands", "SELECT executed_at, command FROM commands WHERE player_id=? ORDER BY executed_at DESC LIMIT 200", [id]),
-      ]).then(([ips, sessions, cmds]) => {
-        out.ips = ips;
-        out.sessions = sessions.map(s => ({
-          login_time: s.login_time || null,
-          logout_time: s.logout_time || null,
-          duration: s.duration || 0
-        }));
-        out.commands = cmds;
-        res.json(out);
-        db.close();
-      });
+// Run an arbitrary command
+api.post('/command', async (req, res) => {
+  try {
+    const { command } = req.body || {};
+    if (!command || typeof command !== 'string') {
+      return res.status(400).json({ ok: false, error: 'Missing command' });
     }
-  );
+    const out = await rconQuery(command);
+    res.json({ ok: true, out });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message || String(e) });
+  }
 });
 
-// ---- Static UI --------------------------------------------------------------
-const PUB = path.join(__dirname, "public");
-app.use(express.static(PUB, { index: "index.html", extensions: ["html"] }));
-
-// Fallback: serve index if root hit
-app.get("/", (req, res) => {
-  const f = path.join(PUB, "index.html");
-  if (fs.existsSync(f)) return res.sendFile(f);
-  res.status(500).send("UI file not found. Place index.html in /opt/mc-rcon-webgui/app/public");
+// Players list for the UI (from live `list` only; DB optional)
+api.get('/players', async (req, res) => {
+  try {
+    const raw = await rconQuery('list');
+    const parsed = parseList(raw);
+    // Shape it like the table expects
+    const rows = parsed.players.map((p, i) => ({
+      id: i + 1,
+      username: p.username,
+      uuid: null,
+      first_seen: null,
+      last_seen: null,
+      total_playtime: 0,
+      last_ip: null
+    }));
+    res.json(rows);
+  } catch (e) {
+    res.status(500).json({ error: e.message || String(e) });
+  }
 });
 
-// ---- Start ------------------------------------------------------------------
-const server = http.createServer(app);
-server.listen(Number(PORT), HOST, () => {
+// One player detail (stub until DB/enriched log parsing is enabled)
+api.get('/player/:id', async (req, res) => {
+  const id = Number(req.params.id || 0);
+  if (!id) return res.status(400).json({ error: 'bad id' });
+  // Since we're not persisting players yet, just echo minimal info
+  res.json({
+    player: { id, username: 'Unknown', uuid: null, first_seen: null, last_seen: null, total_playtime: 0, last_ip: null },
+    ips: [],
+    sessions: [],
+    commands: []
+  });
+});
+
+// (Optional) emergency restart hook you wire to your own script
+api.post('/restart-now', async (req, res) => {
+  // Example broadcast; replace with your own service control if desired
+  try { await rconQuery(`say [Panel] Restarting now...`); } catch (_) {}
+  res.json({ ok: true });
+});
+
+app.use('/api', api);
+
+// ---------- Static UI (from app/public) ----------
+const PUBLIC_DIR = path.join(__dirname, 'public');
+const indexHtml = path.join(PUBLIC_DIR, 'index.html');
+
+app.use(express.static(PUBLIC_DIR));
+app.get('/', (_req, res) => {
+  if (!fs.existsSync(indexHtml)) {
+    res
+      .status(200)
+      .type('text/plain')
+      .send(`MC RCON Panel\nUI file not found. Place index.html in ${PUBLIC_DIR}.`);
+  } else {
+    res.sendFile(indexHtml);
+  }
+});
+
+// Fallback to index for any unmatched non-API route (single-page app)
+app.get('*', (req, res) => {
+  if (req.path.startsWith('/api/')) return res.status(404).send('Not found');
+  if (fs.existsSync(indexHtml)) return res.sendFile(indexHtml);
+  res
+    .status(200)
+    .type('text/plain')
+    .send(`MC RCON Panel\nUI file not found. Place index.html in ${PUBLIC_DIR}.`);
+});
+
+// ---------- Start ----------
+app.listen(PORT, HOST, () => {
   console.log(`Panel on http://${HOST}:${PORT}`);
 });
