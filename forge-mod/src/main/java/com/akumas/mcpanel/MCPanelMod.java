@@ -5,70 +5,37 @@ import java.util.logging.Logger;
 import java.util.logging.Level;
 
 /**
- * MC Panel Data Collector Mod - Crash-Safe Implementation
+ * MC Panel Data Collector Mod for Minecraft Forge
  * 
- * This mod is designed to work with or without full Forge integration.
- * It provides a safe fallback mechanism that prevents server crashes
- * while still offering basic functionality.
+ * This mod provides server monitoring and data collection functionality
+ * for the MC Panel web interface.
+ * 
+ * Note: The @Mod annotation is applied during compilation but the Forge classes
+ * are excluded from the final JAR to prevent conflicts.
  */
+// Forge annotation that gets added during compile time
+@net.minecraftforge.fml.common.Mod("mcpanel")
 public class MCPanelMod {
     public static final String MOD_ID = "mcpanel";
     private static final Logger LOGGER = Logger.getLogger(MCPanelMod.class.getName());
     private static DataServer dataServer;
-    private static boolean forgeAvailable = false;
     private static MCPanelMod instance;
-    
-    // Static initializer for crash-safe initialization
-    static {
-        try {
-            // Check if Forge classes are available
-            Class.forName("net.minecraftforge.fml.common.Mod");
-            forgeAvailable = true;
-            LOGGER.info("Forge classes detected - enabling full integration");
-        } catch (ClassNotFoundException e) {
-            forgeAvailable = false;
-            LOGGER.info("Forge classes not available - using standalone mode");
-        }
-    }
     
     public MCPanelMod() {
         LOGGER.info("MC Panel Data Collector mod initializing...");
         instance = this;
         
-        try {
-            if (forgeAvailable) {
-                initializeForgeIntegration();
-            } else {
-                initializeStandaloneMode();
-            }
-            
-            LOGGER.info("MC Panel Data Collector mod initialized successfully");
-        } catch (Exception e) {
-            LOGGER.log(Level.SEVERE, "Failed to initialize MC Panel mod", e);
-            // Don't throw the exception - just log it to prevent server crash
-        }
-    }
-    
-    private void initializeForgeIntegration() {
-        try {
-            // Only attempt Forge integration if classes are available
-            // This would contain the Forge-specific code
-            LOGGER.info("Attempting Forge integration...");
-            
-            // For now, just start in standalone mode even with Forge available
-            // This ensures compatibility until full Forge dependencies are resolved
-            initializeStandaloneMode();
-            
-        } catch (Exception e) {
-            LOGGER.log(Level.WARNING, "Forge integration failed, falling back to standalone mode", e);
-            initializeStandaloneMode();
-        }
-    }
-    
-    private void initializeStandaloneMode() {
-        LOGGER.info("Initializing MC Panel in standalone mode");
+        // Forge initialization would normally go here
+        setup();
         
-        // Start the data server in a separate thread to avoid blocking
+        LOGGER.info("MC Panel Data Collector mod initialized successfully");
+    }
+    
+    private void setup() {
+        // This method is called during mod setup
+        LOGGER.info("MC Panel mod setup starting...");
+        
+        // Start the data server in a separate thread to avoid blocking mod loading
         Thread serverThread = new Thread(() -> {
             try {
                 Thread.sleep(5000); // Wait 5 seconds for server to fully start
@@ -87,6 +54,8 @@ public class MCPanelMod {
             LOGGER.info("Shutting down MC Panel data collector...");
             stopDataServer();
         }));
+        
+        LOGGER.info("MC Panel mod setup completed");
     }
     
     public static void startDataServer() {
@@ -115,25 +84,5 @@ public class MCPanelMod {
     
     public static MCPanelMod getInstance() {
         return instance;
-    }
-    
-    public static boolean isForgeAvailable() {
-        return forgeAvailable;
-    }
-    
-    // Test method for standalone execution
-    public static void main(String[] args) {
-        LOGGER.info("Testing MC Panel mod initialization...");
-        MCPanelMod mod = new MCPanelMod();
-        
-        // Keep the test running for a few seconds to verify the server starts
-        try {
-            Thread.sleep(10000);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
-        
-        LOGGER.info("Test completed - shutting down");
-        stopDataServer();
     }
 }
