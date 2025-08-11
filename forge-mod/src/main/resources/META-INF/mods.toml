@@ -19,7 +19,7 @@ Collects comprehensive server metrics, player data, world state, and performance
 [[dependencies.mcpanel]]
 modId="forge"
 mandatory=true
-versionRange="[47.2.0,)"
+versionRange="[47.4.0,)"
 ordering="NONE"
 side="SERVER"
 
