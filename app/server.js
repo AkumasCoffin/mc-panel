@@ -15,6 +15,9 @@ try { require('dotenv').config({ path: path.join(__dirname, '.env') }); } catch 
 const { db, run, get, all, initSchema } = require('./db');
 const importer = require('./log_importer');
 const { sendRconCommand, rconEnabled } = require('./rcon');
+const SystemMonitor = require('./system_monitor');
+const FileMonitor = require('./file_monitor');
+const Analytics = require('./analytics');
 
 // ---------- ENV ----------
 const HOST = process.env.HOST || '0.0.0.0';
@@ -30,6 +33,11 @@ const MC_SERVICE_NAME = process.env.MC_SERVICE_NAME || 'minecraft.service';
 const SERVER_LOG = process.env.SERVER_LOG || path.join(MC_SERVER_PATH, 'logs/latest.log');
 const BANNED_PLAYERS_JSON = process.env.BANNED_PLAYERS_JSON || path.join(MC_SERVER_PATH, 'banned-players.json');
 const BANNED_IPS_JSON = process.env.BANNED_IPS_JSON || path.join(MC_SERVER_PATH, 'banned-ips.json');
+
+// Initialize monitoring services
+const systemMonitor = new SystemMonitor();
+const fileMonitor = new FileMonitor(MC_SERVER_PATH);
+const analytics = new Analytics();
 
 // ---------- APP ----------
 const app = express();
@@ -556,6 +564,186 @@ app.get('/api/audit', requireAuth, async (req, res) => {
 // Health
 app.get('/health', (req, res) => res.json({ ok: true }));
 
+// System monitoring endpoints
+app.get('/api/system/metrics', requireAuth, async (req, res) => {
+  try {
+    const metrics = systemMonitor.getMetrics();
+    res.json(metrics);
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to get system metrics' });
+  }
+});
+
+app.get('/api/system/history', requireAuth, async (req, res) => {
+  try {
+    const hours = Math.min(parseInt(req.query.hours) || 24, 168); // Max 7 days
+    const metrics = await all(`
+      SELECT * FROM system_metrics 
+      WHERE recorded_at >= datetime('now', '-${hours} hours')
+      ORDER BY recorded_at ASC
+    `);
+    res.json(metrics);
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to get system history' });
+  }
+});
+
+// Analytics endpoints
+app.get('/api/analytics/dashboard', requireAuth, async (req, res) => {
+  try {
+    const data = await analytics.getDashboardData();
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to get dashboard analytics' });
+  }
+});
+
+app.get('/api/analytics/player-trend', requireAuth, async (req, res) => {
+  try {
+    const days = Math.min(parseInt(req.query.days) || 7, 30);
+    const trend = await analytics.getPlayerActivityTrend(days);
+    res.json(trend);
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to get player trend' });
+  }
+});
+
+app.get('/api/analytics/commands', requireAuth, async (req, res) => {
+  try {
+    const days = Math.min(parseInt(req.query.days) || 7, 30);
+    const stats = await analytics.getCommandStats(days);
+    res.json(stats);
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to get command stats' });
+  }
+});
+
+app.get('/api/analytics/top-players', requireAuth, async (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit) || 10, 50);
+    const players = await analytics.getTopPlayersByPlaytime(limit);
+    res.json(players);
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to get top players' });
+  }
+});
+
+app.get('/api/analytics/hourly-activity', requireAuth, async (req, res) => {
+  try {
+    const days = Math.min(parseInt(req.query.days) || 7, 30);
+    const activity = await analytics.getHourlyActivity(days);
+    res.json(activity);
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to get hourly activity' });
+  }
+});
+
+// Enhanced file monitoring endpoints
+app.get('/api/files/stats', requireAuth, async (req, res) => {
+  try {
+    const stats = await fileMonitor.getStats();
+    res.json(stats);
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to get file stats' });
+  }
+});
+
+app.get('/api/files/changes', requireAuth, async (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+    const changes = await all(`
+      SELECT * FROM file_changes 
+      ORDER BY changed_at DESC 
+      LIMIT ?
+    `, [limit]);
+    res.json(changes);
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to get file changes' });
+  }
+});
+
+app.get('/api/whitelist', requireAuth, async (req, res) => {
+  try {
+    const whitelist = await all('SELECT * FROM whitelist ORDER BY username ASC');
+    res.json(whitelist);
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to get whitelist' });
+  }
+});
+
+app.get('/api/operators', requireAuth, async (req, res) => {
+  try {
+    const operators = await all('SELECT * FROM operators ORDER BY level DESC, username ASC');
+    res.json(operators);
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to get operators' });
+  }
+});
+
+app.get('/api/server-settings', requireAuth, async (req, res) => {
+  try {
+    const settings = await all('SELECT * FROM server_settings ORDER BY property_key ASC');
+    res.json(settings);
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to get server settings' });
+  }
+});
+
+// Enhanced bans endpoint with database data
+app.get('/api/bans/enhanced', requireAuth, async (req, res) => {
+  try {
+    const [dbPlayers, dbIps] = await Promise.all([
+      all('SELECT * FROM banned_players ORDER BY banned_at DESC'),
+      all('SELECT * FROM banned_ips ORDER BY banned_at DESC')
+    ]);
+
+    // Also get filesystem data as fallback
+    const pjson = readJsonSafe(BANNED_PLAYERS_JSON) || [];
+    const ijson = readJsonSafe(BANNED_IPS_JSON) || [];
+    
+    res.json({
+      players: dbPlayers.length > 0 ? dbPlayers : pjson,
+      ips: dbIps.length > 0 ? dbIps : ijson,
+      source: dbPlayers.length > 0 ? 'database' : 'filesystem'
+    });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to get enhanced bans data' });
+  }
+});
+
+// Store system metrics periodically
+async function storeSystemMetrics() {
+  try {
+    const metrics = systemMonitor.getMetrics();
+    if (metrics.timestamp) {
+      await run(`
+        INSERT INTO system_metrics (
+          cpu_usage, cpu_cores, memory_used, memory_total, memory_usage,
+          disk_used, disk_total, disk_usage, network_rx, network_tx,
+          network_rx_rate, network_tx_rate, uptime, load_1, load_5, load_15
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        metrics.cpu.usage, metrics.cpu.cores,
+        metrics.memory.used, metrics.memory.total, metrics.memory.usage,
+        metrics.disk.used, metrics.disk.total, metrics.disk.usage,
+        metrics.network.rx, metrics.network.tx, metrics.network.rxRate, metrics.network.txRate,
+        metrics.uptime, metrics.load[1], metrics.load[5], metrics.load[15]
+      ]);
+    }
+  } catch (e) {
+    console.warn('[panel] Failed to store system metrics:', e.message);
+  }
+}
+
+// Cleanup old metrics (keep only last 7 days)
+async function cleanupOldMetrics() {
+  try {
+    await run("DELETE FROM system_metrics WHERE recorded_at < datetime('now', '-7 days')");
+  } catch (e) {
+    console.warn('[panel] Failed to cleanup old metrics:', e.message);
+  }
+}
+
 // Fallback -> UI (also mark no-store for index shell)
 app.get('*', requireAuth, (req, res) => {
   const indexPath = path.join(PUBLIC_DIR, 'index.html');
@@ -571,5 +759,19 @@ app.get('*', requireAuth, (req, res) => {
   await initSchema();
   await importer.start({ mcPath: MC_SERVER_PATH }).catch(()=>{});
   await refreshSchedulesFromDb();
+  
+  // Start monitoring services
+  systemMonitor.start(5000); // Update every 5 seconds
+  fileMonitor.start();
+  analytics.start();
+  
+  // Store system metrics every minute
+  setInterval(storeSystemMetrics, 60000);
+  
+  // Cleanup old metrics daily
+  setInterval(cleanupOldMetrics, 24 * 60 * 60 * 1000);
+  
+  console.log('[panel] All monitoring services started');
+  
   http.createServer(app).listen(PORT, HOST, () => console.log(`Panel on http://${HOST}:${PORT}`));
 })();

@@ -110,6 +110,102 @@ async function initSchema() {
       label TEXT UNIQUE,
       message TEXT NOT NULL
     )`);
+
+  // System monitoring tables
+  await run(`
+    CREATE TABLE IF NOT EXISTS system_metrics (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      cpu_usage REAL,
+      cpu_cores INTEGER,
+      memory_used INTEGER,
+      memory_total INTEGER,
+      memory_usage REAL,
+      disk_used INTEGER,
+      disk_total INTEGER,
+      disk_usage REAL,
+      network_rx INTEGER,
+      network_tx INTEGER,
+      network_rx_rate INTEGER,
+      network_tx_rate INTEGER,
+      uptime INTEGER,
+      load_1 REAL,
+      load_5 REAL,
+      load_15 REAL,
+      recorded_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`);
+  await run(`CREATE INDEX IF NOT EXISTS ix_system_metrics_time ON system_metrics(recorded_at)`);
+
+  // File monitoring tables
+  await run(`
+    CREATE TABLE IF NOT EXISTS banned_players (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT NOT NULL,
+      uuid TEXT,
+      reason TEXT,
+      banned_by TEXT,
+      banned_at DATETIME
+    )`);
+  await run(`CREATE UNIQUE INDEX IF NOT EXISTS ux_banned_players_username ON banned_players(username)`);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS banned_ips (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      ip TEXT NOT NULL,
+      reason TEXT,
+      banned_by TEXT,
+      banned_at DATETIME
+    )`);
+  await run(`CREATE UNIQUE INDEX IF NOT EXISTS ux_banned_ips_ip ON banned_ips(ip)`);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS whitelist (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT NOT NULL,
+      uuid TEXT
+    )`);
+  await run(`CREATE UNIQUE INDEX IF NOT EXISTS ux_whitelist_username ON whitelist(username)`);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS operators (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT NOT NULL,
+      uuid TEXT,
+      level INTEGER DEFAULT 4,
+      bypasses_player_limit INTEGER DEFAULT 0
+    )`);
+  await run(`CREATE UNIQUE INDEX IF NOT EXISTS ux_operators_username ON operators(username)`);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS server_settings (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      property_key TEXT NOT NULL,
+      property_value TEXT,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`);
+  await run(`CREATE UNIQUE INDEX IF NOT EXISTS ux_server_settings_key ON server_settings(property_key)`);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS file_changes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      filename TEXT NOT NULL,
+      change_type TEXT NOT NULL,
+      data TEXT,
+      changed_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`);
+  await run(`CREATE INDEX IF NOT EXISTS ix_file_changes_time ON file_changes(changed_at)`);
+
+  // Player analytics tables
+  await run(`
+    CREATE TABLE IF NOT EXISTS player_analytics (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      date TEXT NOT NULL,
+      unique_players INTEGER DEFAULT 0,
+      total_sessions INTEGER DEFAULT 0,
+      total_playtime INTEGER DEFAULT 0,
+      peak_online INTEGER DEFAULT 0,
+      avg_session_duration REAL DEFAULT 0
+    )`);
+  await run(`CREATE UNIQUE INDEX IF NOT EXISTS ux_player_analytics_date ON player_analytics(date)`);
 }
 
 module.exports = { db, run, get, all, initSchema };
