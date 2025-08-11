@@ -18,6 +18,7 @@ const { sendRconCommand, rconEnabled } = require('./rcon');
 const SystemMonitor = require('./system_monitor');
 const FileMonitor = require('./file_monitor');
 const Analytics = require('./analytics');
+const McDataClient = require('./mc_data_client');
 
 // ---------- ENV ----------
 const HOST = process.env.HOST || '0.0.0.0';
@@ -38,6 +39,7 @@ const BANNED_IPS_JSON = process.env.BANNED_IPS_JSON || path.join(MC_SERVER_PATH,
 const systemMonitor = new SystemMonitor();
 const fileMonitor = new FileMonitor(MC_SERVER_PATH);
 const analytics = new Analytics();
+const mcDataClient = new McDataClient();
 
 // ---------- APP ----------
 const app = express();
@@ -456,7 +458,22 @@ async function nextRestartInfo() {
 // ---------- API ----------
 app.get('/api/status', requireAuth, async (req, res) => {
   const nxt = await nextRestartInfo();
-  res.json({ online: true, rcon: rconEnabled(), ...nxt });
+  
+  // Try to get MC data collector summary
+  let mcData = null;
+  try {
+    mcData = await mcDataClient.getSummary();
+  } catch (error) {
+    // MC data collector not available - this is fine
+  }
+  
+  res.json({ 
+    online: true, 
+    rcon: rconEnabled(), 
+    mc_data_available: mcData ? mcData.available : false,
+    mc_data: mcData,
+    ...nxt 
+  });
 });
 
 app.get('/api/online', requireAuth, (req, res) => {
@@ -1147,6 +1164,88 @@ async function cleanupOldMetrics() {
     console.warn('[panel] Failed to cleanup old metrics:', e.message);
   }
 }
+
+// MC Data Collector API endpoints
+app.get('/api/mc-data/status', requireAuth, async (req, res) => {
+  try {
+    const status = await mcDataClient.getStatus();
+    res.json(status);
+  } catch (error) {
+    res.status(503).json({ error: 'MC Data Collector unavailable', message: error.message });
+  }
+});
+
+app.get('/api/mc-data/summary', requireAuth, async (req, res) => {
+  try {
+    const summary = await mcDataClient.getSummary();
+    res.json(summary);
+  } catch (error) {
+    res.status(503).json({ error: 'MC Data Collector unavailable', message: error.message });
+  }
+});
+
+app.get('/api/mc-data/all', requireAuth, async (req, res) => {
+  try {
+    const data = await mcDataClient.getAllData();
+    res.json(data);
+  } catch (error) {
+    res.status(503).json({ error: 'MC Data Collector unavailable', message: error.message });
+  }
+});
+
+app.get('/api/mc-data/players', requireAuth, async (req, res) => {
+  try {
+    const data = await mcDataClient.getPlayerData();
+    res.json(data);
+  } catch (error) {
+    res.status(503).json({ error: 'MC Data Collector unavailable', message: error.message });
+  }
+});
+
+app.get('/api/mc-data/world', requireAuth, async (req, res) => {
+  try {
+    const data = await mcDataClient.getWorldData();
+    res.json(data);
+  } catch (error) {
+    res.status(503).json({ error: 'MC Data Collector unavailable', message: error.message });
+  }
+});
+
+app.get('/api/mc-data/performance', requireAuth, async (req, res) => {
+  try {
+    const data = await mcDataClient.getPerformanceData();
+    res.json(data);
+  } catch (error) {
+    res.status(503).json({ error: 'MC Data Collector unavailable', message: error.message });
+  }
+});
+
+app.get('/api/mc-data/mods', requireAuth, async (req, res) => {
+  try {
+    const data = await mcDataClient.getModData();
+    res.json(data);
+  } catch (error) {
+    res.status(503).json({ error: 'MC Data Collector unavailable', message: error.message });
+  }
+});
+
+app.get('/api/mc-data/security', requireAuth, async (req, res) => {
+  try {
+    const data = await mcDataClient.getSecurityData();
+    res.json(data);
+  } catch (error) {
+    res.status(503).json({ error: 'MC Data Collector unavailable', message: error.message });
+  }
+});
+
+app.get('/api/mc-data/misc', requireAuth, async (req, res) => {
+  try {
+    const data = await mcDataClient.getMiscData();
+    res.json(data);
+  } catch (error) {
+    res.status(503).json({ error: 'MC Data Collector unavailable', message: error.message });
+  }
+});
 
 // Fallback -> UI (also mark no-store for index shell)
 app.get('*', requireAuth, (req, res) => {
