@@ -557,11 +557,11 @@
           <h3>Network Activity</h3>
           <div id="networkStats" class="grid cols-2">
             <div class="metric-box">
-              <div class="metric-value" id="networkRx">—</div>
+              <div class="metric-value" id="systemNetworkRx">—</div>
               <div class="metric-label">RX Rate (KB/s)</div>
             </div>
             <div class="metric-box">
-              <div class="metric-value" id="networkTx">—</div>
+              <div class="metric-value" id="systemNetworkTx">—</div>
               <div class="metric-label">TX Rate (KB/s)</div>
             </div>
           </div>
@@ -1802,8 +1802,8 @@
           $('#diskUsage').textContent = `${currentMetrics.disk.usage}%`;
           $('#systemUptime').textContent = Math.round(currentMetrics.uptime / 3600);
           
-          $('#networkRx').textContent = currentMetrics.network.rxRate || '0';
-          $('#networkTx').textContent = currentMetrics.network.txRate || '0';
+          $('#systemNetworkRx').textContent = currentMetrics.network?.rxRate ? currentMetrics.network.rxRate + ' KB/s' : '—';
+          $('#systemNetworkTx').textContent = currentMetrics.network?.txRate ? currentMetrics.network.txRate + ' KB/s' : '—';
           
           $('#load1').textContent = currentMetrics.load[1] || '0';
           $('#load5').textContent = currentMetrics.load[5] || '0';

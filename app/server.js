@@ -729,7 +729,7 @@ app.get('/health', (req, res) => res.json({ ok: true }));
 // System monitoring endpoints
 app.get('/api/system/metrics', requireAuth, async (req, res) => {
   try {
-    const metrics = systemMonitor.getMetrics();
+    const metrics = await systemMonitor.collectMetrics();
     res.json(metrics);
   } catch (e) {
     res.status(500).json({ error: 'Failed to get system metrics' });
@@ -760,9 +760,22 @@ app.get('/api/performance/live', requireAuth, async (req, res) => {
     try {
       if (rconEnabled()) {
         const tpsResult = await sendRconCommand('forge tps');
-        if (tpsResult && tpsResult.response) {
+        if (tpsResult) {
           // Parse TPS from forge response (format varies)
-          const tpsMatch = tpsResult.response.match(/(\d+\.?\d*)\s*TPS/i);
+          // Try multiple TPS command formats for different servers
+          let tpsMatch = tpsResult.match(/(\d+\.?\d*)\s*TPS/i);
+          if (!tpsMatch) {
+            // Try Minecraft vanilla /tps command format
+            tpsMatch = tpsResult.match(/TPS:\s*(\d+\.?\d*)/i);
+          }
+          if (!tpsMatch) {
+            // Try Paper/Spigot format
+            tpsMatch = tpsResult.match(/Overall:\s*(\d+\.?\d*)/i);
+          }
+          if (!tpsMatch) {
+            // Try general number extraction for TPS
+            tpsMatch = tpsResult.match(/(\d+\.\d+)/);
+          }
           if (tpsMatch) {
             tps = parseFloat(tpsMatch[1]);
           }
