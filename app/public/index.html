@@ -278,9 +278,9 @@
         <button data-tab="analytics"><svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1010 10A10.011 10.011 0 0012 2zm5 10a5 5 0 01-8.536 3.536L15.536 8.464A4.982 4.982 0 0117 12zm-10 0a5 5 0 018.536-3.536L8.464 15.536A4.982 4.982 0 017 12z" fill="currentColor"/></svg>Analytics</button>
         <button data-tab="monitoring"><svg viewBox="0 0 24 24"><path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m0 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" stroke="currentColor" fill="none" stroke-width="1.5"/></svg>System Monitor</button>
         <button data-tab="server-controls"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="currentColor"/></svg>Server Controls</button>
-        <button data-tab="online"><svg viewBox="0 0 24 24"><path d="M12 12a5 5 0 100-10 5 5 0 000 10zm-9 9a9 9 0 1118 0H3z" fill="currentColor"/></svg>Online <span class="right tag" id="onlineCount">0</span></button>
+
         <button data-tab="players"><svg viewBox="0 0 24 24"><path d="M16 13a4 4 0 10-8 0 7 7 0 00-7 7h22a7 7 0 00-7-7z" fill="currentColor"/></svg>Players</button>
-        <button data-tab="bans"><svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1010 10A10.011 10.011 0 0012 2zm5 10a5 5 0 01-8.536 3.536L15.536 8.464A4.982 4.982 0 0117 12zm-10 0a5 5 0 018.536-3.536L8.464 15.536A4.982 4.982 0 017 12z" fill="currentColor"/></svg>Bans</button>
+
         <button data-tab="moderation"><svg viewBox="0 0 24 24"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" stroke="currentColor" fill="none" stroke-width="1.5"/></svg>Moderation</button>
         <button data-tab="schedules"><svg viewBox="0 0 24 24"><path d="M7 2v3M17 2v3M3 9h18M5 5h14a2 2 0 012 2v13H3V7a2 2 0 012-2z" stroke="currentColor" fill="none" stroke-width="1.3"/></svg>Scheduled Restarts</button>
         <button data-tab="settings"><svg viewBox="0 0 24 24"><path d="M12 15a3 3 0 100-6 3 3 0 000 6z" stroke="currentColor" fill="none"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z" stroke="currentColor" fill="none" stroke-width="1.5"/></svg>Settings</button>
@@ -363,13 +363,7 @@
       </div>
 
       <!-- ONLINE -->
-      <div id="tab-online" class="cards" hidden>
-        <section class="card">
-          <h3>Online Players</h3>
-          <div id="onlineList2" class="grid cols-3"></div>
-          <div id="onlineEmpty2" class="empty" style="display:none">No one online.</div>
-        </section>
-      </div>
+
 
       <!-- ANALYTICS -->
       <div id="tab-analytics" class="cards" hidden>
@@ -663,18 +657,7 @@
       </div>
 
       <!-- BANS -->
-      <div id="tab-bans" class="cards" hidden>
-        <section class="card two">
-          <h3>Banned Players</h3>
-          <div id="banPlayers" class="grid cols-2"></div>
-          <div id="banPlayersEmpty" class="empty" style="display:none">No player bans found.</div>
-        </section>
-        <section class="card third">
-          <h3>Banned IPs</h3>
-          <div id="banIps" class="grid"></div>
-          <div id="banIpsEmpty" class="empty" style="display:none">No IP bans found.</div>
-        </section>
-      </div>
+
 
       <!-- MODERATION -->
       <div id="tab-moderation" class="cards" hidden>
@@ -695,6 +678,16 @@
             <button class="btn warn" id="modKickSend">Kick Player</button>
           </div>
           <div class="small muted">Requires RCON. Command: <code>kick &lt;user&gt; &lt;reason&gt;</code></div>
+        </section>
+        <section class="card two">
+          <h3>Banned Players</h3>
+          <div id="banPlayers" class="grid cols-2"></div>
+          <div id="banPlayersEmpty" class="empty" style="display:none">No player bans found.</div>
+        </section>
+        <section class="card third">
+          <h3>Banned IPs</h3>
+          <div id="banIps" class="grid"></div>
+          <div id="banIpsEmpty" class="empty" style="display:none">No IP bans found.</div>
         </section>
       </div>
 
@@ -844,7 +837,7 @@
 
   <script>
     // Defensive: ensure only Dashboard is visible at boot, in case of cachey CSS
-    ['online','players','bans','moderation','schedules','settings','audit','analytics','monitoring','performance','server-controls']
+    ['players','moderation','schedules','settings','audit','analytics','monitoring','performance','server-controls']
       .forEach(t => { const el = document.getElementById('tab-'+t); if (el) el.hidden = true; });
     document.getElementById('tab-status').hidden = false;
 
@@ -963,7 +956,7 @@
           tabBtns.forEach(b=>b.classList.remove('active'));
           btn.classList.add('active');
           const t = btn.dataset.tab;
-          $$('#tab-status,#tab-online,#tab-players,#tab-bans,#tab-moderation,#tab-schedules,#tab-settings,#tab-audit,#tab-analytics,#tab-monitoring,#tab-performance,#tab-server-controls').forEach(x=>x.hidden = true);
+          $$('#tab-status,#tab-players,#tab-moderation,#tab-schedules,#tab-settings,#tab-audit,#tab-analytics,#tab-monitoring,#tab-performance,#tab-server-controls').forEach(x=>x.hidden = true);
           const targetTab = $('#tab-'+t);
           if (targetTab) {
             targetTab.hidden = false;
@@ -972,10 +965,9 @@
           }
           
           // Load tab-specific data
-          if (t==='online'){ loadOnline(true); }
+
           if (t==='players'){ loadPlayers(); }
-          if (t==='bans'){ loadBans(); }
-          if (t==='moderation'){ loadModeration(); }
+          if (t==='moderation'){ loadModeration(); loadBans(); }
           if (t==='schedules'){ loadSchedules(); }
           if (t==='settings'){ loadSettings(); }
           if (t==='audit'){ loadAudit(); }
@@ -1089,16 +1081,36 @@
     async function loadOnline(copyToStatus=false){
       try{
         const data = await jget('/api/online');
-        $('#onlineCount').textContent = data.count ?? 0;
+        const onlineCountEl = $('#onlineCount');
+        if (onlineCountEl) onlineCountEl.textContent = data.count ?? 0;
+        
         const target1 = $('#onlineList'), target2 = $('#onlineList2');
         const empty1 = $('#onlineEmpty'), empty2 = $('#onlineEmpty2');
         const makeChip = (p)=>`<button class="btn" onclick="openPlayerByName('${p.username}')">${p.username}${p.uuid?` <span class='tag'>${p.uuid.slice(0,8)}</span>`:''}</button>`;
-        target1.innerHTML = data.players.map(makeChip).join('');
-        target2.innerHTML = data.players.map(makeChip).join('');
-        empty1.style.display = data.players.length? 'none':'block';
-        empty2.style.display = data.players.length? 'none':'block';
-        if(copyToStatus){ $('#onlineList').innerHTML = target1.innerHTML; $('#onlineEmpty').style.display = empty1.style.display; }
-      }catch{ $('#onlineCount').textContent = '—'; }
+        
+        if (target1) {
+          target1.innerHTML = data.players.map(makeChip).join('');
+        }
+        if (target2) {
+          target2.innerHTML = data.players.map(makeChip).join('');
+        }
+        if (empty1) {
+          empty1.style.display = data.players.length? 'none':'block';
+        }
+        if (empty2) {
+          empty2.style.display = data.players.length? 'none':'block';
+        }
+        
+        if(copyToStatus && target1 && empty1){ 
+          const onlineListEl = $('#onlineList');
+          const onlineEmptyEl = $('#onlineEmpty');
+          if (onlineListEl) onlineListEl.innerHTML = target1.innerHTML; 
+          if (onlineEmptyEl) onlineEmptyEl.style.display = empty1.style.display; 
+        }
+      }catch{ 
+        const onlineCountEl = $('#onlineCount');
+        if (onlineCountEl) onlineCountEl.textContent = '—'; 
+      }
     }
 
     // Players
@@ -1615,14 +1627,14 @@
     function updateCommandChart(data) {
       const ctx = $('#commandChart').getContext('2d');
       
-      if (window.commandChart) {
-        window.commandChart.destroy();
+      if (commandChart) {
+        commandChart.destroy();
       }
       
       // Take top 10 commands
       const topCommands = data.slice(0, 10);
       
-      window.commandChart = new Chart(ctx, {
+      commandChart = new Chart(ctx, {
         type: 'bar',
         data: {
           labels: topCommands.map(cmd => cmd.command),
@@ -1651,11 +1663,11 @@
     function updateDailyPlayerChart(data) {
       const ctx = $('#dailyPlayerChart').getContext('2d');
       
-      if (window.dailyPlayerChart) {
-        window.dailyPlayerChart.destroy();
+      if (dailyPlayerChart) {
+        dailyPlayerChart.destroy();
       }
       
-      window.dailyPlayerChart = new Chart(ctx, {
+      dailyPlayerChart = new Chart(ctx, {
         type: 'line',
         data: {
           labels: data.map(d => new Date(d.date).toLocaleDateString()),
@@ -1839,8 +1851,7 @@
       loadStatus(); loadOnline();
       const active = $('.nav button.active').dataset.tab;
       if(active==='players') loadPlayers();
-      if(active==='bans') loadBans();
-      if(active==='moderation') loadModeration();
+      if(active==='moderation') { loadModeration(); loadBans(); }
       if(active==='schedules') loadSchedules();
       if(active==='settings') loadSettings();
       if(active==='audit') loadAudit();
