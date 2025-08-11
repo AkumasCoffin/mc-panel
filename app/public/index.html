@@ -599,24 +599,54 @@
       return r.json(); 
     }
 
-    // Tabs
-    const tabBtns = $$('.nav button');
-    tabBtns.forEach(btn=>btn.addEventListener('click',()=>{
-      tabBtns.forEach(b=>b.classList.remove('active'));
-      btn.classList.add('active');
-      const t = btn.dataset.tab;
-      $$('#tab-status,#tab-online,#tab-players,#tab-bans,#tab-moderation,#tab-schedules,#tab-presets,#tab-audit,#tab-analytics,#tab-monitoring').forEach(x=>x.hidden = true);
-      $('#tab-'+t).hidden = false;
-      if (t==='online'){ loadOnline(true); }
-      if (t==='players'){ loadPlayers(); }
-      if (t==='bans'){ loadBans(); }
-      if (t==='moderation'){ loadModeration(); }
-      if (t==='schedules'){ loadSchedules(); }
-      if (t==='presets'){ loadPresets(); }
-      if (t==='audit'){ loadAudit(); }
-      if (t==='analytics'){ loadAnalytics(); }
-      if (t==='monitoring'){ loadSystemMonitoring(); }
-    }));
+    // Tabs - with defensive initialization to handle timing issues
+    function initializeTabs() {
+      const tabBtns = $$('.nav button');
+      
+      // Check if tab buttons are available
+      if (tabBtns.length === 0) {
+        console.warn('[panel] Tab buttons not found, retrying in 100ms...');
+        setTimeout(initializeTabs, 100);
+        return;
+      }
+      
+      console.log(`[panel] Initializing ${tabBtns.length} tab buttons`);
+      
+      tabBtns.forEach(btn => {
+        // Remove any existing listeners to prevent duplicates
+        btn.removeEventListener('click', btn._tabClickHandler);
+        
+        // Create and store the click handler
+        btn._tabClickHandler = () => {
+          tabBtns.forEach(b=>b.classList.remove('active'));
+          btn.classList.add('active');
+          const t = btn.dataset.tab;
+          $$('#tab-status,#tab-online,#tab-players,#tab-bans,#tab-moderation,#tab-schedules,#tab-presets,#tab-audit,#tab-analytics,#tab-monitoring').forEach(x=>x.hidden = true);
+          const targetTab = $('#tab-'+t);
+          if (targetTab) {
+            targetTab.hidden = false;
+          } else {
+            console.warn(`[panel] Tab content not found: tab-${t}`);
+          }
+          
+          // Load tab-specific data
+          if (t==='online'){ loadOnline(true); }
+          if (t==='players'){ loadPlayers(); }
+          if (t==='bans'){ loadBans(); }
+          if (t==='moderation'){ loadModeration(); }
+          if (t==='schedules'){ loadSchedules(); }
+          if (t==='presets'){ loadPresets(); }
+          if (t==='audit'){ loadAudit(); }
+          if (t==='analytics'){ loadAnalytics(); }
+          if (t==='monitoring'){ loadSystemMonitoring(); }
+        };
+        
+        btn.addEventListener('click', btn._tabClickHandler);
+      });
+    }
+    
+    // Initialize tabs immediately and also retry if needed
+    initializeTabs();
 
     // Status with enhanced dashboard data
     async function loadStatus(){
@@ -1268,11 +1298,30 @@
     // Logout button
     $('#logoutBtn').addEventListener('click', logout);
 
-    // Initial load with automatic refresh
-    setTimeout(() => {
-      loadStatus(); loadOnline(true);
-      setInterval(()=>{ loadStatus(); loadOnline(true); }, 30000); // Refresh every 30s
-    }, 1000);
+    // Enhanced initialization with proper DOM ready handling
+    function initializeApp() {
+      // Ensure DOM is ready
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initializeApp);
+        return;
+      }
+      
+      console.log('[panel] Initializing application...');
+      
+      // Initialize tabs with retry mechanism
+      initializeTabs();
+      
+      // Start data loading
+      setTimeout(() => {
+        loadStatus(); loadOnline(true);
+        setInterval(()=>{ loadStatus(); loadOnline(true); }, 30000); // Refresh every 30s
+      }, 1000);
+      
+      console.log('[panel] Application initialized successfully');
+    }
+    
+    // Start initialization
+    initializeApp();
   </script>
 </body>
 </html>
