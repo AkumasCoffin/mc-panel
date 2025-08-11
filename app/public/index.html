@@ -276,7 +276,6 @@
         <button data-tab="status" class="active"><svg viewBox="0 0 24 24"><path d="M3 12h6v9H3zM9 3h6v18H9zM15 8h6v13h-6z" fill="currentColor"/></svg>Dashboard</button>
         <button data-tab="performance"><svg viewBox="0 0 24 24"><path d="M12 2L2 7v10c0 5.55 3.84 9.74 9 11 5.16-1.26 9-5.45 9-11V7l-10-5z" stroke="currentColor" fill="none" stroke-width="1.5"/></svg>Performance</button>
         <button data-tab="analytics"><svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1010 10A10.011 10.011 0 0012 2zm5 10a5 5 0 01-8.536 3.536L15.536 8.464A4.982 4.982 0 0117 12zm-10 0a5 5 0 018.536-3.536L8.464 15.536A4.982 4.982 0 017 12z" fill="currentColor"/></svg>Analytics</button>
-        <button data-tab="monitoring"><svg viewBox="0 0 24 24"><path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m0 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" stroke="currentColor" fill="none" stroke-width="1.5"/></svg>System Monitor</button>
         <button data-tab="server-controls"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="currentColor"/></svg>Server Controls</button>
 
         <button data-tab="players"><svg viewBox="0 0 24 24"><path d="M16 13a4 4 0 10-8 0 7 7 0 00-7 7h22a7 7 0 00-7-7z" fill="currentColor"/></svg>Players</button>
@@ -448,7 +447,7 @@
       <!-- PERFORMANCE -->
       <div id="tab-performance" class="cards" hidden>
         <section class="card third">
-          <h3>Real-time Metrics</h3>
+          <h3>Real-time System Metrics</h3>
           <div id="liveMetrics" class="grid cols-2">
             <div class="metric-box">
               <div class="metric-value" id="liveCPU">—</div>
@@ -463,8 +462,8 @@
               <div class="metric-label">Disk Usage %</div>
             </div>
             <div class="metric-box">
-              <div class="metric-value" id="liveTPS">—</div>
-              <div class="metric-label">Server TPS</div>
+              <div class="metric-value" id="serverUptime">—</div>
+              <div class="metric-label">System Uptime</div>
             </div>
           </div>
         </section>
@@ -473,6 +472,14 @@
           <h3>Server Performance</h3>
           <div id="serverMetrics" class="grid cols-2">
             <div class="metric-box">
+              <div class="metric-value" id="liveTPS">—</div>
+              <div class="metric-label">Server TPS</div>
+            </div>
+            <div class="metric-box">
+              <div class="metric-value" id="avgTPS">—</div>
+              <div class="metric-label">Avg TPS (5min)</div>
+            </div>
+            <div class="metric-box">
               <div class="metric-value" id="networkRx">—</div>
               <div class="metric-label">Network RX Rate</div>
             </div>
@@ -480,19 +487,29 @@
               <div class="metric-value" id="networkTx">—</div>
               <div class="metric-label">Network TX Rate</div>
             </div>
+          </div>
+        </section>
+
+        <section class="card third">
+          <h3>System Load Average</h3>
+          <div id="loadStats" class="grid cols-3">
             <div class="metric-box">
-              <div class="metric-value" id="serverUptime">—</div>
-              <div class="metric-label">Server Uptime</div>
+              <div class="metric-value" id="load1">—</div>
+              <div class="metric-label">1 min</div>
             </div>
             <div class="metric-box">
-              <div class="metric-value" id="avgTPS">—</div>
-              <div class="metric-label">Avg TPS (5min)</div>
+              <div class="metric-value" id="load5">—</div>
+              <div class="metric-label">5 min</div>
+            </div>
+            <div class="metric-box">
+              <div class="metric-value" id="load15">—</div>
+              <div class="metric-label">15 min</div>
             </div>
           </div>
         </section>
 
         <section class="card third">
-          <h3>Historical Data</h3>
+          <h3>Historical Data Controls</h3>
           <div class="row">
             <select id="perfPeriod">
               <option value="1h">Last Hour</option>
@@ -501,6 +518,11 @@
             </select>
             <button class="btn" id="perfRefresh">Refresh</button>
           </div>
+        </section>
+
+        <section class="card two">
+          <h3>Server File Monitoring</h3>
+          <div id="fileMonitorStats"></div>
         </section>
 
         <section class="card">
@@ -520,76 +542,17 @@
             <canvas id="performanceNetworkChart"></canvas>
           </div>
         </section>
-      </div>
 
-      <!-- SYSTEM MONITORING -->
-      <div id="tab-monitoring" class="cards" hidden>
-        <section class="card third">
-          <h3>System Overview</h3>
-          <div id="systemStatus" class="grid cols-2">
-            <div class="metric-box">
-              <div class="metric-value" id="cpuUsage">—</div>
-              <div class="metric-label">CPU Usage</div>
-            </div>
-            <div class="metric-box">
-              <div class="metric-value" id="memoryUsage">—</div>
-              <div class="metric-label">Memory Usage</div>
-            </div>
-            <div class="metric-box">
-              <div class="metric-value" id="diskUsage">—</div>
-              <div class="metric-label">Disk Usage</div>
-            </div>
-            <div class="metric-box">
-              <div class="metric-value" id="systemUptime">—</div>
-              <div class="metric-label">Uptime (hours)</div>
-            </div>
-          </div>
-        </section>
-
-        <section class="card two">
-          <h3>System Performance (24h)</h3>
+        <section class="card">
+          <h3>System Performance (24h)
+            <button class="btn ghost" style="font-size:12px; padding:2px 6px; margin-left:8px;" onclick="showChartInfo('system-24h')">ℹ️</button>
+          </h3>
           <div class="chart-container" style="height:250px">
             <canvas id="systemChart"></canvas>
           </div>
         </section>
-
-        <section class="card third">
-          <h3>Network Activity</h3>
-          <div id="networkStats" class="grid cols-2">
-            <div class="metric-box">
-              <div class="metric-value" id="systemNetworkRx">—</div>
-              <div class="metric-label">RX Rate (KB/s)</div>
-            </div>
-            <div class="metric-box">
-              <div class="metric-value" id="systemNetworkTx">—</div>
-              <div class="metric-label">TX Rate (KB/s)</div>
-            </div>
-          </div>
-        </section>
-
-        <section class="card third">
-          <h3>Load Average</h3>
-          <div id="loadStats" class="grid cols-3">
-            <div class="metric-box">
-              <div class="metric-value" id="load1">—</div>
-              <div class="metric-label">1 min</div>
-            </div>
-            <div class="metric-box">
-              <div class="metric-value" id="load5">—</div>
-              <div class="metric-label">5 min</div>
-            </div>
-            <div class="metric-box">
-              <div class="metric-value" id="load15">—</div>
-              <div class="metric-label">15 min</div>
-            </div>
-          </div>
-        </section>
-
-        <section class="card two">
-          <h3>File Monitoring</h3>
-          <div id="fileMonitorStats"></div>
-        </section>
       </div>
+
 
       <!-- SERVER CONTROLS -->
       <div id="tab-server-controls" class="cards" hidden>
@@ -867,7 +830,7 @@
     }
 
     // Defensive: ensure only Dashboard is visible at boot, in case of cachey CSS
-    ['players','moderation','schedules','settings','audit','analytics','monitoring','performance','server-controls']
+    ['players','moderation','schedules','settings','audit','analytics','performance','server-controls']
       .forEach(t => { const el = document.getElementById('tab-'+t); if (el) el.hidden = true; });
     document.getElementById('tab-status').hidden = false;
 
@@ -986,7 +949,7 @@
           tabBtns.forEach(b=>b.classList.remove('active'));
           btn.classList.add('active');
           const t = btn.dataset.tab;
-          $$('#tab-status,#tab-players,#tab-moderation,#tab-schedules,#tab-settings,#tab-audit,#tab-analytics,#tab-monitoring,#tab-performance,#tab-server-controls').forEach(x=>x.hidden = true);
+          $$('#tab-status,#tab-players,#tab-moderation,#tab-schedules,#tab-settings,#tab-audit,#tab-analytics,#tab-performance,#tab-server-controls').forEach(x=>x.hidden = true);
           const targetTab = $('#tab-'+t);
           if (targetTab) {
             targetTab.hidden = false;
@@ -1002,8 +965,7 @@
           if (t==='settings'){ loadSettings(); }
           if (t==='audit'){ loadAudit(); }
           if (t==='analytics'){ loadAnalytics(); }
-          if (t==='monitoring'){ loadSystemMonitoring(); }
-          if (t==='performance'){ loadPerformance(); }
+          if (t==='performance'){ loadPerformance(); loadSystemMonitoring(); }
           if (t==='server-controls'){ loadServerControls(); }
         };
         
@@ -1347,6 +1309,11 @@
         $('#networkTx').textContent = data.network?.txRate ? data.network.txRate + ' KB/s' : '—';
         $('#serverUptime').textContent = data.uptime ? fmtDur(data.uptime) : '—';
         $('#avgTPS').textContent = data.tps ? data.tps.toFixed(1) : '—'; // Show same TPS for now
+        
+        // Update load average
+        $('#load1').textContent = data.load?.[1] ? data.load[1].toFixed(2) : '—';
+        $('#load5').textContent = data.load?.[5] ? data.load[5].toFixed(2) : '—';
+        $('#load15').textContent = data.load?.[15] ? data.load[15].toFixed(2) : '—';
       } catch (e) {
         console.error('Failed to update live metrics:', e);
       }
@@ -1790,25 +1757,7 @@
     // System Monitoring
     async function loadSystemMonitoring() {
       try {
-        const [currentMetrics, fileStats] = await Promise.all([
-          jget('/api/system/metrics'),
-          jget('/api/files/stats').catch(() => null)
-        ]);
-        
-        // Update current system metrics
-        if (currentMetrics) {
-          $('#cpuUsage').textContent = `${currentMetrics.cpu.usage}%`;
-          $('#memoryUsage').textContent = `${currentMetrics.memory.usage}%`;
-          $('#diskUsage').textContent = `${currentMetrics.disk.usage}%`;
-          $('#systemUptime').textContent = Math.round(currentMetrics.uptime / 3600);
-          
-          $('#systemNetworkRx').textContent = currentMetrics.network?.rxRate ? currentMetrics.network.rxRate + ' KB/s' : '—';
-          $('#systemNetworkTx').textContent = currentMetrics.network?.txRate ? currentMetrics.network.txRate + ' KB/s' : '—';
-          
-          $('#load1').textContent = currentMetrics.load[1] || '0';
-          $('#load5').textContent = currentMetrics.load[5] || '0';
-          $('#load15').textContent = currentMetrics.load[15] || '0';
-        }
+        const fileStats = await jget('/api/files/stats').catch(() => null);
         
         // Update file monitoring stats
         if (fileStats) {
@@ -1933,8 +1882,7 @@
       if(active==='settings') loadSettings();
       if(active==='audit') loadAudit();
       if(active==='analytics') loadAnalytics();
-      if(active==='monitoring') loadSystemMonitoring();
-      if(active==='performance') loadPerformance();
+      if(active==='performance') { loadPerformance(); loadSystemMonitoring(); }
       if(active==='server-controls') loadServerControls();
     });
 
