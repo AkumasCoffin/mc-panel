@@ -489,6 +489,20 @@ app.delete('/api/ban-presets/:id', requireAuth, async (req, res) => {
   await run('DELETE FROM ban_presets WHERE id=?', [Number(req.params.id)]); res.json({ ok: true });
 });
 
+// Kick presets CRUD
+app.get('/api/kick-presets', requireAuth, async (req, res) => {
+  const rows = await all('SELECT id,label,reason FROM kick_presets ORDER BY id DESC'); res.json(rows);
+});
+app.post('/api/kick-presets', requireAuth, validateStringInput('label', 100), validateStringInput('reason', 500), async (req, res) => {
+  const { label, reason } = req.body || {};
+  if (!reason) return res.status(400).json({ error: 'reason required' });
+  await run('INSERT OR REPLACE INTO kick_presets(label,reason) VALUES(?,?)', [label || null, String(reason)]);
+  res.status(201).json({ ok: true });
+});
+app.delete('/api/kick-presets/:id', requireAuth, async (req, res) => {
+  await run('DELETE FROM kick_presets WHERE id=?', [Number(req.params.id)]); res.json({ ok: true });
+});
+
 // Use presets
 app.post('/api/broadcast', requireAuth, validateStringInput('message', 1000), async (req, res) => {
   const { message, presetId } = req.body || {};
@@ -523,6 +537,26 @@ app.post('/api/ban', requireAuth, validateStringInput('username', 50), validateS
   if (!rconEnabled()) return res.status(501).json({ ok: false, out: 'RCON disabled.' });
   try {
     const out = await sendRconCommand(`ban ${username} ${why}`);
+    res.json({ ok: true, out: String(out || '').trim() });
+  } catch (e) {
+    res.status(500).json({ ok: false, out: 'RCON error: ' + e.message });
+  }
+});
+
+app.post('/api/kick', requireAuth, validateStringInput('username', 50), validateStringInput('reason', 500), async (req, res) => {
+  const { username, reason, presetId } = req.body || {};
+  if (!username) return res.status(400).json({ error: 'username required' });
+  let why = String(reason || '').trim();
+  if (!why && presetId) {
+    const row = await get('SELECT reason FROM kick_presets WHERE id=?', [Number(presetId)]);
+    why = row ? String(row.reason || '').trim() : '';
+  }
+  if (!why) why = 'Kicked by an operator.';
+  await audit('kick', { username, reason: why, presetId: presetId || null, by: req.ip, at: new Date().toISOString() });
+
+  if (!rconEnabled()) return res.status(501).json({ ok: false, out: 'RCON disabled.' });
+  try {
+    const out = await sendRconCommand(`kick ${username} ${why}`);
     res.json({ ok: true, out: String(out || '').trim() });
   } catch (e) {
     res.status(500).json({ ok: false, out: 'RCON error: ' + e.message });

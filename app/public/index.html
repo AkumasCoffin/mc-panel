@@ -82,8 +82,24 @@
     .status-indicator.warning{background:#ffb020}
     .status-indicator.critical{background:#ff5d5d}
   </style>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.min.js" 
-          onerror="console.warn('Chart.js CDN failed to load - charts will be disabled')"></script>
+  <script>
+    // Simple fallback for Chart.js - create a mock Chart object to prevent errors
+    if (typeof Chart === 'undefined') {
+      window.Chart = {
+        defaults: {
+          color: '#aab3c7',
+          backgroundColor: 'rgba(124, 92, 255, 0.1)',
+          borderColor: '#7c5cff',
+          plugins: { legend: { labels: { color: '#aab3c7' } } },
+          scales: {
+            linear: { grid: { color: 'rgba(171, 179, 199, 0.1)' }, ticks: { color: '#aab3c7' } },
+            category: { grid: { color: 'rgba(171, 179, 199, 0.1)' }, ticks: { color: '#aab3c7' } }
+          }
+        }
+      };
+      console.warn('Chart.js not available - using fallback (charts disabled)');
+    }
+  </script>
 </head>
 <body>
   <div class="app">
@@ -100,6 +116,7 @@
         <button data-tab="online"><svg viewBox="0 0 24 24"><path d="M12 12a5 5 0 100-10 5 5 0 000 10zm-9 9a9 9 0 1118 0H3z" fill="currentColor"/></svg>Online <span class="right tag" id="onlineCount">0</span></button>
         <button data-tab="players"><svg viewBox="0 0 24 24"><path d="M16 13a4 4 0 10-8 0 7 7 0 00-7 7h22a7 7 0 00-7-7z" fill="currentColor"/></svg>Players</button>
         <button data-tab="bans"><svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1010 10A10.011 10.011 0 0012 2zm5 10a5 5 0 01-8.536 3.536L15.536 8.464A4.982 4.982 0 0117 12zm-10 0a5 5 0 018.536-3.536L8.464 15.536A4.982 4.982 0 017 12z" fill="currentColor"/></svg>Bans</button>
+        <button data-tab="moderation"><svg viewBox="0 0 24 24"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" stroke="currentColor" fill="none" stroke-width="1.5"/></svg>Moderation</button>
         <button data-tab="schedules"><svg viewBox="0 0 24 24"><path d="M7 2v3M17 2v3M3 9h18M5 5h14a2 2 0 012 2v13H3V7a2 2 0 012-2z" stroke="currentColor" fill="none" stroke-width="1.3"/></svg>Scheduled Restarts</button>
         <button data-tab="presets"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h10M4 17h7" stroke="currentColor" fill="none" stroke-width="1.4"/></svg>Presets</button>
         <button data-tab="audit"><svg viewBox="0 0 24 24"><path d="M4 4h16v16H4zM8 8h8M8 12h8M8 16h5" stroke="currentColor" fill="none" stroke-width="1.3"/></svg>Audit / Commands</button>
@@ -345,6 +362,28 @@
         </section>
       </div>
 
+      <!-- MODERATION -->
+      <div id="tab-moderation" class="cards" hidden>
+        <section class="card half">
+          <h3>Ban Player</h3>
+          <div class="row" style="margin-bottom:10px">
+            <input id="modBanUser" type="text" placeholder="Username to ban" />
+            <select id="modBanSelect"><option value="">Select ban reason…</option></select>
+            <button class="btn danger" id="modBanSend">Ban Player</button>
+          </div>
+          <div class="small muted">Requires RCON. Command: <code>ban &lt;user&gt; &lt;reason&gt;</code></div>
+        </section>
+        <section class="card half">
+          <h3>Kick Player</h3>
+          <div class="row" style="margin-bottom:10px">
+            <input id="modKickUser" type="text" placeholder="Username to kick" />
+            <select id="modKickSelect"><option value="">Select kick reason…</option></select>
+            <button class="btn warn" id="modKickSend">Kick Player</button>
+          </div>
+          <div class="small muted">Requires RCON. Command: <code>kick &lt;user&gt; &lt;reason&gt;</code></div>
+        </section>
+      </div>
+
       <!-- SCHEDULES -->
       <div id="tab-schedules" class="cards" hidden>
         <section class="card">
@@ -374,7 +413,7 @@
 
       <!-- PRESETS -->
       <div id="tab-presets" class="cards" hidden>
-        <section class="card half">
+        <section class="card third">
           <h3>Broadcast Presets</h3>
           <div class="row">
             <input id="bcLabel" type="text" placeholder="Label (optional)" />
@@ -389,7 +428,7 @@
             <button class="btn" id="bcSend">Send Broadcast</button>
           </div>
         </section>
-        <section class="card half">
+        <section class="card third">
           <h3>Ban Presets</h3>
           <div class="row">
             <input id="banLabel" type="text" placeholder="Label (optional)" />
@@ -399,12 +438,17 @@
           <div style="overflow:auto; max-height:50vh">
             <table id="banTable"><thead><tr><th>ID</th><th>Label</th><th>Reason</th><th></th></tr></thead><tbody></tbody></table>
           </div>
-          <div class="row" style="margin-top:10px">
-            <input id="banUser" type="text" placeholder="Username to ban" />
-            <select id="banSelect"><option value="">Select reason…</option></select>
-            <button class="btn danger" id="banSend">Ban with Preset</button>
+        </section>
+        <section class="card third">
+          <h3>Kick Presets</h3>
+          <div class="row">
+            <input id="kickLabel" type="text" placeholder="Label (optional)" />
+            <input id="kickReason" type="text" placeholder="Reason" />
+            <button class="btn brand" id="kickAdd">Save</button>
           </div>
-          <div class="small muted">Requires RCON. Command: <code>ban &lt;user&gt; &lt;reason&gt;</code></div>
+          <div style="overflow:auto; max-height:50vh">
+            <table id="kickTable"><thead><tr><th>ID</th><th>Label</th><th>Reason</th><th></th></tr></thead><tbody></tbody></table>
+          </div>
         </section>
       </div>
 
@@ -465,7 +509,7 @@
 
   <script>
     // Defensive: ensure only Dashboard is visible at boot, in case of cachey CSS
-    ['online','players','bans','schedules','presets','audit','analytics','monitoring']
+    ['online','players','bans','moderation','schedules','presets','audit','analytics','monitoring']
       .forEach(t => { const el = document.getElementById('tab-'+t); if (el) el.hidden = true; });
     document.getElementById('tab-status').hidden = false;
 
@@ -552,11 +596,12 @@
       tabBtns.forEach(b=>b.classList.remove('active'));
       btn.classList.add('active');
       const t = btn.dataset.tab;
-      $$('#tab-status,#tab-online,#tab-players,#tab-bans,#tab-schedules,#tab-presets,#tab-audit,#tab-analytics,#tab-monitoring').forEach(x=>x.hidden = true);
+      $$('#tab-status,#tab-online,#tab-players,#tab-bans,#tab-moderation,#tab-schedules,#tab-presets,#tab-audit,#tab-analytics,#tab-monitoring').forEach(x=>x.hidden = true);
       $('#tab-'+t).hidden = false;
       if (t==='online'){ loadOnline(true); }
       if (t==='players'){ loadPlayers(); }
       if (t==='bans'){ loadBans(); }
+      if (t==='moderation'){ loadModeration(); }
       if (t==='schedules'){ loadSchedules(); }
       if (t==='presets'){ loadPresets(); }
       if (t==='audit'){ loadAudit(); }
@@ -768,10 +813,36 @@
       try{ await jpost('/api/schedules', {cron, label:label||null}); $('#cronExpr').value = ''; $('#cronLabel').value = ''; loadSchedules(); toast('Schedule added'); }catch(e){ toast('Failed: '+e.message); }
     });
 
+    // Moderation
+    async function loadModeration(){
+      try{
+        const [banPresets, kickPresets] = await Promise.all([
+          jget('/api/ban-presets'),
+          jget('/api/kick-presets')
+        ]);
+        
+        // Populate ban presets dropdown
+        $('#modBanSelect').innerHTML = '<option value="">Select ban reason…</option>' + 
+          banPresets.map(r=>`<option value="${r.id}">${r.label||('ID: '+r.id)}</option>`).join('');
+        
+        // Populate kick presets dropdown
+        $('#modKickSelect').innerHTML = '<option value="">Select kick reason…</option>' + 
+          kickPresets.map(r=>`<option value="${r.id}">${r.label||('ID: '+r.id)}</option>`).join('');
+      }catch(e){ 
+        console.error('Failed to load moderation presets:', e); 
+        $('#modBanSelect').innerHTML = '<option value="">Select ban reason…</option>';
+        $('#modKickSelect').innerHTML = '<option value="">Select kick reason…</option>';
+      }
+    }
+
     // Presets
     async function loadPresets(){
       try{
-        const [bc, ban] = await Promise.all([jget('/api/broadcast-presets'), jget('/api/ban-presets')]);
+        const [bc, ban, kick] = await Promise.all([
+          jget('/api/broadcast-presets'), 
+          jget('/api/ban-presets'),
+          jget('/api/kick-presets')
+        ]);
         
         // Broadcast presets table
         const bcRows = bc.map(r=>`<tr><td>${r.id}</td><td>${r.label||'—'}</td><td class="small">${escapeHtml(r.message||'')}</td><td><button class="btn danger ghost" onclick="deleteBcPreset(${r.id})">Delete</button></td></tr>`).join('');
@@ -784,8 +855,9 @@
         const banRows = ban.map(r=>`<tr><td>${r.id}</td><td>${r.label||'—'}</td><td class="small">${escapeHtml(r.reason||'')}</td><td><button class="btn danger ghost" onclick="deleteBanPreset(${r.id})">Delete</button></td></tr>`).join('');
         $('#banTable tbody').innerHTML = banRows || '<tr><td colspan="4" class="small">No presets</td></tr>';
         
-        // Ban presets dropdown
-        $('#banSelect').innerHTML = '<option value="">Select reason…</option>' + ban.map(r=>`<option value="${r.id}">${r.label||('ID: '+r.id)}</option>`).join('');
+        // Kick presets table
+        const kickRows = kick.map(r=>`<tr><td>${r.id}</td><td>${r.label||'—'}</td><td class="small">${escapeHtml(r.reason||'')}</td><td><button class="btn danger ghost" onclick="deleteKickPreset(${r.id})">Delete</button></td></tr>`).join('');
+        $('#kickTable tbody').innerHTML = kickRows || '<tr><td colspan="4" class="small">No presets</td></tr>';
       }catch(e){ console.error('Failed to load presets:', e); }
     }
     
@@ -795,7 +867,11 @@
     }
     async function deleteBanPreset(id){
       if(!confirm('Delete this ban preset?')) return;
-      try{ await jdel('/api/ban-presets/'+id); loadPresets(); toast('Preset deleted'); }catch(e){ toast('Failed: '+e.message); }
+      try{ await jdel('/api/ban-presets/'+id); loadPresets(); loadModeration(); toast('Preset deleted'); }catch(e){ toast('Failed: '+e.message); }
+    }
+    async function deleteKickPreset(id){
+      if(!confirm('Delete this kick preset?')) return;
+      try{ await jdel('/api/kick-presets/'+id); loadPresets(); loadModeration(); toast('Preset deleted'); }catch(e){ toast('Failed: '+e.message); }
     }
     
     $('#bcAdd').addEventListener('click', async ()=>{
@@ -807,7 +883,13 @@
     $('#banAdd').addEventListener('click', async ()=>{
       const label = $('#banLabel').value.trim(), reason = $('#banReason').value.trim();
       if(!reason) return toast('Reason required');
-      try{ await jpost('/api/ban-presets', {label:label||null, reason}); $('#banLabel').value = ''; $('#banReason').value = ''; loadPresets(); toast('Preset saved'); }catch(e){ toast('Failed: '+e.message); }
+      try{ await jpost('/api/ban-presets', {label:label||null, reason}); $('#banLabel').value = ''; $('#banReason').value = ''; loadPresets(); loadModeration(); toast('Preset saved'); }catch(e){ toast('Failed: '+e.message); }
+    });
+    
+    $('#kickAdd').addEventListener('click', async ()=>{
+      const label = $('#kickLabel').value.trim(), reason = $('#kickReason').value.trim();
+      if(!reason) return toast('Reason required');
+      try{ await jpost('/api/kick-presets', {label:label||null, reason}); $('#kickLabel').value = ''; $('#kickReason').value = ''; loadPresets(); loadModeration(); toast('Preset saved'); }catch(e){ toast('Failed: '+e.message); }
     });
     
     $('#bcSend').addEventListener('click', async ()=>{
@@ -816,12 +898,21 @@
       try{ const result = await jpost('/api/broadcast', {presetId: Number(presetId)}); toast('Broadcast sent'); $('#cmdOut').textContent = result.out || 'Sent successfully'; }catch(e){ toast('Failed: '+e.message); }
     });
     
-    $('#banSend').addEventListener('click', async ()=>{
-      const username = $('#banUser').value.trim(), presetId = $('#banSelect').value;
+    // Moderation functionality
+    $('#modBanSend').addEventListener('click', async ()=>{
+      const username = $('#modBanUser').value.trim(), presetId = $('#modBanSelect').value;
       if(!username) return toast('Username required');
-      if(!presetId) return toast('Please select a reason');
+      if(!presetId) return toast('Please select a ban reason');
       if(!confirm(`Ban user "${username}"?`)) return;
-      try{ const result = await jpost('/api/ban', {username, presetId: Number(presetId)}); toast('Ban executed'); $('#cmdOut').textContent = result.out || 'Ban executed successfully'; $('#banUser').value = ''; }catch(e){ toast('Failed: '+e.message); }
+      try{ const result = await jpost('/api/ban', {username, presetId: Number(presetId)}); toast('Ban executed'); $('#cmdOut').textContent = result.out || 'Ban executed successfully'; $('#modBanUser').value = ''; }catch(e){ toast('Failed: '+e.message); }
+    });
+    
+    $('#modKickSend').addEventListener('click', async ()=>{
+      const username = $('#modKickUser').value.trim(), presetId = $('#modKickSelect').value;
+      if(!username) return toast('Username required');
+      if(!presetId) return toast('Please select a kick reason');
+      if(!confirm(`Kick user "${username}"?`)) return;
+      try{ const result = await jpost('/api/kick', {username, presetId: Number(presetId)}); toast('Kick executed'); $('#cmdOut').textContent = result.out || 'Kick executed successfully'; $('#modKickUser').value = ''; }catch(e){ toast('Failed: '+e.message); }
     });
 
     // Analytics
@@ -1157,6 +1248,7 @@
       const active = $('.nav button.active').dataset.tab;
       if(active==='players') loadPlayers();
       if(active==='bans') loadBans();
+      if(active==='moderation') loadModeration();
       if(active==='schedules') loadSchedules();
       if(active==='presets') loadPresets();
       if(active==='audit') loadAudit();

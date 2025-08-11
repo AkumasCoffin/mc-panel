@@ -105,6 +105,13 @@ async function initSchema() {
     )`);
 
   await run(`
+    CREATE TABLE IF NOT EXISTS kick_presets (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      label TEXT UNIQUE,
+      reason TEXT NOT NULL
+    )`);
+
+  await run(`
     CREATE TABLE IF NOT EXISTS broadcast_presets (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       label TEXT UNIQUE,
