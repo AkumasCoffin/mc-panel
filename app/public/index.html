@@ -70,7 +70,19 @@
     .right{margin-left:auto}
     .center{display:flex; justify-content:center; align-items:center}
     .empty{padding:18px; border:1px dashed #2b3147; border-radius:12px; color:#aab3c7; background:#0f1320}
+    
+    /* Chart containers */
+    .chart-container{position:relative; height:200px; margin:10px 0}
+    .chart-container canvas{background:rgba(15,17,21,0.5); border-radius:12px}
+    .metric-box{background:linear-gradient(135deg,#151823,#1a1f2e); border:1px solid var(--border); border-radius:12px; padding:12px; text-align:center}
+    .metric-value{font-size:24px; font-weight:bold; color:var(--brand)}
+    .metric-label{font-size:12px; color:var(--muted); margin-top:4px}
+    .status-indicator{display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px}
+    .status-indicator.good{background:#44d3a8}
+    .status-indicator.warning{background:#ffb020}
+    .status-indicator.critical{background:#ff5d5d}
   </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.min.js"></script>
 </head>
 <body>
   <div class="app">
@@ -82,6 +94,8 @@
       </div>
       <div class="nav">
         <button data-tab="status" class="active"><svg viewBox="0 0 24 24"><path d="M3 12h6v9H3zM9 3h6v18H9zM15 8h6v13h-6z" fill="currentColor"/></svg>Dashboard</button>
+        <button data-tab="analytics"><svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1010 10A10.011 10.011 0 0012 2zm5 10a5 5 0 01-8.536 3.536L15.536 8.464A4.982 4.982 0 0117 12zm-10 0a5 5 0 018.536-3.536L8.464 15.536A4.982 4.982 0 017 12z" fill="currentColor"/></svg>Analytics</button>
+        <button data-tab="monitoring"><svg viewBox="0 0 24 24"><path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m0 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" stroke="currentColor" fill="none" stroke-width="1.5"/></svg>System Monitor</button>
         <button data-tab="online"><svg viewBox="0 0 24 24"><path d="M12 12a5 5 0 100-10 5 5 0 000 10zm-9 9a9 9 0 1118 0H3z" fill="currentColor"/></svg>Online <span class="right tag" id="onlineCount">0</span></button>
         <button data-tab="players"><svg viewBox="0 0 24 24"><path d="M16 13a4 4 0 10-8 0 7 7 0 00-7 7h22a7 7 0 00-7-7z" fill="currentColor"/></svg>Players</button>
         <button data-tab="bans"><svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1010 10A10.011 10.011 0 0012 2zm5 10a5 5 0 01-8.536 3.536L15.536 8.464A4.982 4.982 0 0117 12zm-10 0a5 5 0 018.536-3.536L8.464 15.536A4.982 4.982 0 017 12z" fill="currentColor"/></svg>Bans</button>
@@ -105,25 +119,48 @@
 
       <!-- STATUS -->
       <div id="tab-status" class="cards">
-        <section class="card half">
+        <section class="card third">
           <h3>Server Status</h3>
-          <div class="grid cols-2">
-            <div class="empty" id="statusBox">Checking…</div>
-            <div class="empty" id="restartBox">
-              <div>Next Restart</div>
-              <div class="row" style="margin-top:8px">
-                <div><span class="tag" id="nextRestart2">—</span></div>
-                <div><span class="tag" id="nextRestartIn">—</span></div>
-              </div>
-              <div class="small" style="margin-top:8px">Configured in <b>Scheduled Restarts</b>.</div>
+          <div id="statusBox" class="empty">Checking…</div>
+        </section>
+
+        <section class="card third">
+          <h3>Next Restart</h3>
+          <div id="restartBox" class="empty">
+            <div>Next Restart</div>
+            <div class="row" style="margin-top:8px">
+              <div><span class="tag" id="nextRestart2">—</span></div>
+              <div><span class="tag" id="nextRestartIn">—</span></div>
+            </div>
+            <div class="small" style="margin-top:8px">Configured in <b>Scheduled Restarts</b>.</div>
+          </div>
+        </section>
+
+        <section class="card third">
+          <h3>Quick Stats</h3>
+          <div id="quickStats" class="grid cols-2">
+            <div class="metric-box">
+              <div class="metric-value" id="totalPlayers">—</div>
+              <div class="metric-label">Total Players</div>
+            </div>
+            <div class="metric-box">
+              <div class="metric-value" id="onlineNow">—</div>
+              <div class="metric-label">Online Now</div>
             </div>
           </div>
         </section>
 
         <section class="card half">
-          <h3>Online Now</h3>
+          <h3>Online Players</h3>
           <div id="onlineList" class="grid cols-2"></div>
           <div id="onlineEmpty" class="empty" style="display:none">No one online.</div>
+        </section>
+
+        <section class="card half">
+          <h3>Player Activity (7 days)</h3>
+          <div class="chart-container">
+            <canvas id="playerTrendChart"></canvas>
+          </div>
         </section>
 
         <section class="card">
@@ -135,6 +172,11 @@
           <pre id="cmdOut" class="small" style="margin-top:10px; white-space:pre-wrap; background:#0e1220; border:1px solid var(--border); padding:10px; border-radius:10px; min-height:40px"></pre>
           <div class="small muted" id="rconNote" style="margin-top:8px"></div>
         </section>
+
+        <section class="card">
+          <h3>Recent Activity</h3>
+          <div id="recentActivity" style="max-height:200px; overflow-y:auto"></div>
+        </section>
       </div>
 
       <!-- ONLINE -->
@@ -143,6 +185,131 @@
           <h3>Online Players</h3>
           <div id="onlineList2" class="grid cols-3"></div>
           <div id="onlineEmpty2" class="empty" style="display:none">No one online.</div>
+        </section>
+      </div>
+
+      <!-- ANALYTICS -->
+      <div id="tab-analytics" class="cards" hidden>
+        <section class="card third">
+          <h3>Today's Stats</h3>
+          <div id="todayStats" class="grid cols-2">
+            <div class="metric-box">
+              <div class="metric-value" id="todayPlayers">—</div>
+              <div class="metric-label">Unique Players</div>
+            </div>
+            <div class="metric-box">
+              <div class="metric-value" id="todaySessions">—</div>
+              <div class="metric-label">Sessions</div>
+            </div>
+            <div class="metric-box">
+              <div class="metric-value" id="todayPeak">—</div>
+              <div class="metric-label">Peak Online</div>
+            </div>
+            <div class="metric-box">
+              <div class="metric-value" id="avgSession">—</div>
+              <div class="metric-label">Avg Session (min)</div>
+            </div>
+          </div>
+        </section>
+
+        <section class="card two">
+          <h3>Player Activity Trend</h3>
+          <div class="chart-container" style="height:250px">
+            <canvas id="analyticsPlayerChart"></canvas>
+          </div>
+        </section>
+
+        <section class="card half">
+          <h3>Top Players by Playtime</h3>
+          <div id="topPlayersList" style="max-height:300px; overflow-y:auto"></div>
+        </section>
+
+        <section class="card half">
+          <h3>Session Length Distribution</h3>
+          <div class="chart-container">
+            <canvas id="sessionDistChart"></canvas>
+          </div>
+        </section>
+
+        <section class="card">
+          <h3>Hourly Activity Pattern</h3>
+          <div class="chart-container" style="height:250px">
+            <canvas id="hourlyActivityChart"></canvas>
+          </div>
+        </section>
+
+        <section class="card">
+          <h3>Command Usage</h3>
+          <div id="commandStats" style="max-height:300px; overflow-y:auto"></div>
+        </section>
+      </div>
+
+      <!-- SYSTEM MONITORING -->
+      <div id="tab-monitoring" class="cards" hidden>
+        <section class="card third">
+          <h3>System Overview</h3>
+          <div id="systemStatus" class="grid cols-2">
+            <div class="metric-box">
+              <div class="metric-value" id="cpuUsage">—</div>
+              <div class="metric-label">CPU Usage</div>
+            </div>
+            <div class="metric-box">
+              <div class="metric-value" id="memoryUsage">—</div>
+              <div class="metric-label">Memory Usage</div>
+            </div>
+            <div class="metric-box">
+              <div class="metric-value" id="diskUsage">—</div>
+              <div class="metric-label">Disk Usage</div>
+            </div>
+            <div class="metric-box">
+              <div class="metric-value" id="systemUptime">—</div>
+              <div class="metric-label">Uptime (hours)</div>
+            </div>
+          </div>
+        </section>
+
+        <section class="card two">
+          <h3>System Performance (24h)</h3>
+          <div class="chart-container" style="height:250px">
+            <canvas id="systemChart"></canvas>
+          </div>
+        </section>
+
+        <section class="card third">
+          <h3>Network Activity</h3>
+          <div id="networkStats" class="grid cols-2">
+            <div class="metric-box">
+              <div class="metric-value" id="networkRx">—</div>
+              <div class="metric-label">RX Rate (KB/s)</div>
+            </div>
+            <div class="metric-box">
+              <div class="metric-value" id="networkTx">—</div>
+              <div class="metric-label">TX Rate (KB/s)</div>
+            </div>
+          </div>
+        </section>
+
+        <section class="card third">
+          <h3>Load Average</h3>
+          <div id="loadStats" class="grid cols-3">
+            <div class="metric-box">
+              <div class="metric-value" id="load1">—</div>
+              <div class="metric-label">1 min</div>
+            </div>
+            <div class="metric-box">
+              <div class="metric-value" id="load5">—</div>
+              <div class="metric-label">5 min</div>
+            </div>
+            <div class="metric-box">
+              <div class="metric-value" id="load15">—</div>
+              <div class="metric-label">15 min</div>
+            </div>
+          </div>
+        </section>
+
+        <section class="card two">
+          <h3>File Monitoring</h3>
+          <div id="fileMonitorStats"></div>
         </section>
       </div>
 
@@ -297,7 +464,7 @@
 
   <script>
     // Defensive: ensure only Dashboard is visible at boot, in case of cachey CSS
-    ['online','players','bans','schedules','presets','audit']
+    ['online','players','bans','schedules','presets','audit','analytics','monitoring']
       .forEach(t => { const el = document.getElementById('tab-'+t); if (el) el.hidden = true; });
     document.getElementById('tab-status').hidden = false;
 
@@ -308,6 +475,23 @@
     function fmtDate(s){ if(!s) return '—'; const d = new Date(s); if (isNaN(d)) return s; return d.toLocaleString(); }
     function fmtDur(sec){ if(sec==null) return '—'; sec = Math.max(0, +sec|0); const h = Math.floor(sec/3600), m = Math.floor((sec%3600)/60), s = sec%60; const parts = []; if(h) parts.push(h+'h'); if(m||h) parts.push((h?String(m).padStart(2,'0'):m)+'m'); parts.push(String(s).padStart(2,'0')+'s'); return parts.join(' '); }
     function escapeHtml(s){ return (s||'').replace(/[&<>"]/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+    // Chart.js defaults for dark theme
+    Chart.defaults.color = '#aab3c7';
+    Chart.defaults.backgroundColor = 'rgba(124, 92, 255, 0.1)';
+    Chart.defaults.borderColor = '#7c5cff';
+    Chart.defaults.plugins.legend.labels.color = '#aab3c7';
+    Chart.defaults.scales.linear.grid.color = 'rgba(171, 179, 199, 0.1)';
+    Chart.defaults.scales.linear.ticks.color = '#aab3c7';
+    Chart.defaults.scales.category.grid.color = 'rgba(171, 179, 199, 0.1)';
+    Chart.defaults.scales.category.ticks.color = '#aab3c7';
+
+    // Chart instances
+    let playerTrendChart = null;
+    let analyticsPlayerChart = null;
+    let sessionDistChart = null;
+    let hourlyActivityChart = null;
+    let systemChart = null;
 
     // Authentication handling - session-based (no more hardcoded auth headers)
     
@@ -363,7 +547,7 @@
       tabBtns.forEach(b=>b.classList.remove('active'));
       btn.classList.add('active');
       const t = btn.dataset.tab;
-      $$('#tab-status,#tab-online,#tab-players,#tab-bans,#tab-schedules,#tab-presets,#tab-audit').forEach(x=>x.hidden = true);
+      $$('#tab-status,#tab-online,#tab-players,#tab-bans,#tab-schedules,#tab-presets,#tab-audit,#tab-analytics,#tab-monitoring').forEach(x=>x.hidden = true);
       $('#tab-'+t).hidden = false;
       if (t==='online'){ loadOnline(true); }
       if (t==='players'){ loadPlayers(); }
@@ -371,22 +555,90 @@
       if (t==='schedules'){ loadSchedules(); }
       if (t==='presets'){ loadPresets(); }
       if (t==='audit'){ loadAudit(); }
+      if (t==='analytics'){ loadAnalytics(); }
+      if (t==='monitoring'){ loadSystemMonitoring(); }
     }));
 
-    // Status
+    // Status with enhanced dashboard data
     async function loadStatus(){
       try{
-        const s = await jget('/api/status');
-        $('#statusChip').innerHTML = 'Status: <span class="tag">online</span>' + (s.rcon? ' <span class="tag">RCON</span>' : ' <span class="tag">no RCON</span>');
-        $('#rconNote').textContent = s.rcon ? 'RCON enabled.' : 'RCON disabled; only "list" is emulated.';
-        $('#nextRestart').textContent = s.next_restart_iso ? fmtDate(s.next_restart_iso) : '—';
+        const [status, dashboardData] = await Promise.all([
+          jget('/api/status'),
+          jget('/api/analytics/dashboard').catch(() => null)
+        ]);
+        
+        $('#statusChip').innerHTML = 'Status: <span class="tag">online</span>' + (status.rcon? ' <span class="tag">RCON</span>' : ' <span class="tag">no RCON</span>');
+        $('#rconNote').textContent = status.rcon ? 'RCON enabled.' : 'RCON disabled; only "list" is emulated.';
+        $('#nextRestart').textContent = status.next_restart_iso ? fmtDate(status.next_restart_iso) : '—';
         $('#nextRestart2').textContent = $('#nextRestart').textContent;
-        $('#nextRestartIn').textContent = s.next_restart_seconds!=null ? (Math.floor(s.next_restart_seconds/60)+' min') : '—';
+        $('#nextRestartIn').textContent = status.next_restart_seconds!=null ? (Math.floor(status.next_restart_seconds/60)+' min') : '—';
         $('#statusBox').innerHTML = `<div class="row"><div><span class="tag">Panel OK</span></div><div><span class="tag">Auth: Session</span></div></div><div class="small muted" style="margin-top:8px">Live log tracking enabled.</div>`;
+        
+        // Update quick stats if available
+        if (dashboardData && dashboardData.current_stats) {
+          const stats = dashboardData.current_stats;
+          $('#totalPlayers').textContent = stats.total_players || '0';
+          $('#onlineNow').textContent = stats.online_players || '0';
+          
+          // Update recent activity
+          if (dashboardData.recent_activity) {
+            const activities = dashboardData.recent_activity.slice(0, 5).map(act => {
+              const icon = act.type === 'join' ? '🟢' : '🔴';
+              const time = new Date(act.timestamp).toLocaleTimeString();
+              return `<div class="small" style="margin-bottom:4px">${icon} ${act.username} ${act.type === 'join' ? 'joined' : 'left'} at ${time}</div>`;
+            }).join('');
+            $('#recentActivity').innerHTML = activities || '<div class="empty">No recent activity</div>';
+          }
+          
+          // Update player trend chart on dashboard
+          if (dashboardData.player_trend && dashboardData.player_trend.length > 0) {
+            updatePlayerTrendChart(dashboardData.player_trend);
+          }
+        }
       }catch(e){
         $('#statusChip').innerHTML = 'Status: <span class="tag">error</span>';
         $('#statusBox').innerHTML = '<div class="empty">Could not load /api/status</div>';
       }
+    }
+
+    // Update player trend chart (small version for dashboard)
+    function updatePlayerTrendChart(data) {
+      const ctx = $('#playerTrendChart').getContext('2d');
+      
+      if (playerTrendChart) {
+        playerTrendChart.destroy();
+      }
+      
+      playerTrendChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: data.map(d => new Date(d.date).toLocaleDateString()),
+          datasets: [{
+            label: 'Unique Players',
+            data: data.map(d => d.unique_players),
+            borderColor: '#7c5cff',
+            backgroundColor: 'rgba(124, 92, 255, 0.1)',
+            tension: 0.4,
+            fill: true
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false }
+          },
+          scales: {
+            y: { 
+              beginAtZero: true,
+              grid: { color: 'rgba(171, 179, 199, 0.1)' }
+            },
+            x: { 
+              grid: { color: 'rgba(171, 179, 199, 0.1)' }
+            }
+          }
+        }
+      });
     }
     async function runList(){
       $('#cmdOut').textContent = 'Running…';
@@ -562,6 +814,292 @@
       try{ const result = await jpost('/api/ban', {username, presetId: Number(presetId)}); toast('Ban executed'); $('#cmdOut').textContent = result.out || 'Ban executed successfully'; $('#banUser').value = ''; }catch(e){ toast('Failed: '+e.message); }
     });
 
+    // Analytics
+    async function loadAnalytics() {
+      try {
+        const data = await jget('/api/analytics/dashboard');
+        
+        // Update today's stats
+        if (data.current_stats && data.current_stats.today) {
+          const today = data.current_stats.today;
+          $('#todayPlayers').textContent = today.unique_players || '0';
+          $('#todaySessions').textContent = today.total_sessions || '0';
+          $('#todayPeak').textContent = today.peak_online || '0';
+          $('#avgSession').textContent = Math.round((today.avg_session_duration || 0) / 60);
+        }
+        
+        // Update player trend chart
+        if (data.player_trend) {
+          updateAnalyticsPlayerChart(data.player_trend);
+        }
+        
+        // Update top players
+        if (data.top_players) {
+          const playersHtml = data.top_players.map((player, index) => 
+            `<div class="small" style="display:flex; justify-content:space-between; margin-bottom:8px; padding:8px; background:rgba(15,17,21,0.5); border-radius:8px">
+              <span><b>${index + 1}.</b> ${player.username}</span>
+              <span>${player.playtime_hours}h</span>
+            </div>`
+          ).join('');
+          $('#topPlayersList').innerHTML = playersHtml || '<div class="empty">No player data</div>';
+        }
+        
+        // Update session distribution
+        if (data.session_distribution) {
+          updateSessionDistChart(data.session_distribution);
+        }
+        
+        // Update hourly activity
+        if (data.hourly_activity) {
+          updateHourlyActivityChart(data.hourly_activity);
+        }
+        
+        // Update command stats
+        if (data.command_stats) {
+          const commandsHtml = data.command_stats.slice(0, 10).map(cmd => 
+            `<div class="small" style="display:flex; justify-content:space-between; margin-bottom:4px">
+              <span><code>${escapeHtml(cmd.command)}</code></span>
+              <span>${cmd.usage_count} uses</span>
+            </div>`
+          ).join('');
+          $('#commandStats').innerHTML = commandsHtml || '<div class="empty">No command data</div>';
+        }
+        
+      } catch (e) {
+        console.error('Failed to load analytics:', e);
+        toast('Failed to load analytics data');
+      }
+    }
+
+    function updateAnalyticsPlayerChart(data) {
+      const ctx = $('#analyticsPlayerChart').getContext('2d');
+      
+      if (analyticsPlayerChart) {
+        analyticsPlayerChart.destroy();
+      }
+      
+      analyticsPlayerChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: data.map(d => new Date(d.date).toLocaleDateString()),
+          datasets: [
+            {
+              label: 'Unique Players',
+              data: data.map(d => d.unique_players),
+              borderColor: '#7c5cff',
+              backgroundColor: 'rgba(124, 92, 255, 0.1)',
+              tension: 0.4,
+              yAxisID: 'y'
+            },
+            {
+              label: 'Sessions',
+              data: data.map(d => d.total_sessions),
+              borderColor: '#44d3a8',
+              backgroundColor: 'rgba(68, 211, 168, 0.1)',
+              tension: 0.4,
+              yAxisID: 'y1'
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { position: 'top' }
+          },
+          scales: {
+            y: {
+              type: 'linear',
+              display: true,
+              position: 'left',
+              title: { display: true, text: 'Players' }
+            },
+            y1: {
+              type: 'linear',
+              display: true,
+              position: 'right',
+              title: { display: true, text: 'Sessions' },
+              grid: { drawOnChartArea: false }
+            }
+          }
+        }
+      });
+    }
+
+    function updateSessionDistChart(data) {
+      const ctx = $('#sessionDistChart').getContext('2d');
+      
+      if (sessionDistChart) {
+        sessionDistChart.destroy();
+      }
+      
+      sessionDistChart = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+          labels: data.map(d => d.duration_bucket),
+          datasets: [{
+            data: data.map(d => d.count),
+            backgroundColor: [
+              'rgba(124, 92, 255, 0.8)',
+              'rgba(68, 211, 168, 0.8)',
+              'rgba(255, 176, 32, 0.8)',
+              'rgba(255, 93, 93, 0.8)',
+              'rgba(156, 163, 175, 0.8)',
+              'rgba(99, 102, 241, 0.8)'
+            ]
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { position: 'bottom' }
+          }
+        }
+      });
+    }
+
+    function updateHourlyActivityChart(data) {
+      const ctx = $('#hourlyActivityChart').getContext('2d');
+      
+      if (hourlyActivityChart) {
+        hourlyActivityChart.destroy();
+      }
+      
+      hourlyActivityChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: data.map(d => d.hour + ':00'),
+          datasets: [{
+            label: 'Sessions',
+            data: data.map(d => d.sessions),
+            backgroundColor: 'rgba(124, 92, 255, 0.6)',
+            borderColor: '#7c5cff',
+            borderWidth: 1
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false }
+          },
+          scales: {
+            y: { beginAtZero: true }
+          }
+        }
+      });
+    }
+
+    // System Monitoring
+    async function loadSystemMonitoring() {
+      try {
+        const [currentMetrics, fileStats] = await Promise.all([
+          jget('/api/system/metrics'),
+          jget('/api/files/stats').catch(() => null)
+        ]);
+        
+        // Update current system metrics
+        if (currentMetrics) {
+          $('#cpuUsage').textContent = `${currentMetrics.cpu.usage}%`;
+          $('#memoryUsage').textContent = `${currentMetrics.memory.usage}%`;
+          $('#diskUsage').textContent = `${currentMetrics.disk.usage}%`;
+          $('#systemUptime').textContent = Math.round(currentMetrics.uptime / 3600);
+          
+          $('#networkRx').textContent = currentMetrics.network.rxRate || '0';
+          $('#networkTx').textContent = currentMetrics.network.txRate || '0';
+          
+          $('#load1').textContent = currentMetrics.load[1] || '0';
+          $('#load5').textContent = currentMetrics.load[5] || '0';
+          $('#load15').textContent = currentMetrics.load[15] || '0';
+        }
+        
+        // Update file monitoring stats
+        if (fileStats) {
+          const fileStatsHtml = `
+            <div class="grid cols-2">
+              <div class="small">Banned Players: <b>${fileStats.banned_players || 0}</b></div>
+              <div class="small">Banned IPs: <b>${fileStats.banned_ips || 0}</b></div>
+              <div class="small">Whitelist: <b>${fileStats.whitelist || 0}</b></div>
+              <div class="small">Operators: <b>${fileStats.operators || 0}</b></div>
+              <div class="small">Server Settings: <b>${fileStats.server_settings || 0}</b></div>
+              <div class="small">Active Watchers: <b>${fileStats.active_watchers || 0}</b></div>
+            </div>
+          `;
+          $('#fileMonitorStats').innerHTML = fileStatsHtml;
+        }
+        
+        // Load system history chart
+        loadSystemHistoryChart();
+        
+      } catch (e) {
+        console.error('Failed to load system monitoring:', e);
+        toast('Failed to load system monitoring data');
+      }
+    }
+
+    async function loadSystemHistoryChart() {
+      try {
+        const history = await jget('/api/system/history?hours=24');
+        
+        const ctx = $('#systemChart').getContext('2d');
+        
+        if (systemChart) {
+          systemChart.destroy();
+        }
+        
+        systemChart = new Chart(ctx, {
+          type: 'line',
+          data: {
+            labels: history.map(h => new Date(h.recorded_at).toLocaleTimeString()),
+            datasets: [
+              {
+                label: 'CPU %',
+                data: history.map(h => h.cpu_usage),
+                borderColor: '#7c5cff',
+                backgroundColor: 'rgba(124, 92, 255, 0.1)',
+                yAxisID: 'y',
+                tension: 0.4
+              },
+              {
+                label: 'Memory %',
+                data: history.map(h => h.memory_usage),
+                borderColor: '#44d3a8',
+                backgroundColor: 'rgba(68, 211, 168, 0.1)',
+                yAxisID: 'y',
+                tension: 0.4
+              },
+              {
+                label: 'Disk %',
+                data: history.map(h => h.disk_usage),
+                borderColor: '#ffb020',
+                backgroundColor: 'rgba(255, 176, 32, 0.1)',
+                yAxisID: 'y',
+                tension: 0.4
+              }
+            ]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { position: 'top' }
+            },
+            scales: {
+              y: {
+                beginAtZero: true,
+                max: 100,
+                title: { display: true, text: 'Usage %' }
+              }
+            }
+          }
+        });
+        
+      } catch (e) {
+        console.warn('Failed to load system history chart:', e);
+      }
+    }
+
     // Logout function
     async function logout() {
       try {
@@ -592,6 +1130,8 @@
       if(active==='schedules') loadSchedules();
       if(active==='presets') loadPresets();
       if(active==='audit') loadAudit();
+      if(active==='analytics') loadAnalytics();
+      if(active==='monitoring') loadSystemMonitoring();
     });
 
     // Logout button
