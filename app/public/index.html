@@ -49,7 +49,15 @@
     .grid.cols-2{grid-template-columns: repeat(2, 1fr)}
     .grid.cols-3{grid-template-columns: repeat(3, 1fr)}
     .grid.cols-4{grid-template-columns: repeat(4, 1fr)}
-    @media (max-width: 900px){ .grid.cols-2,.grid.cols-3,.grid.cols-4{grid-template-columns:1fr}}
+    @media (max-width: 900px){ 
+      .grid.cols-2,.grid.cols-3,.grid.cols-4{grid-template-columns:1fr}
+      .app{grid-template-columns:1fr; grid-template-rows:auto 1fr}
+      .side{height:auto; position:static; flex-direction:row; overflow-x:auto; gap:8px; padding:12px}
+      .nav{flex-direction:row; gap:8px; white-space:nowrap}
+      .nav button{min-width:120px; justify-content:center}
+      .main{padding:16px}
+      .card.half,.card.third,.card.two{grid-column:span 12}
+    }
     table{width:100%; border-collapse:collapse}
     th,td{padding:8px 10px; border-bottom:1px dashed #23283a; text-align:left}
     th{color:#aab3c7; font-weight:600; background:#121624; position:sticky; top:0}
@@ -78,6 +86,28 @@
     .metric-value{font-size:24px; font-weight:bold; color:var(--brand)}
     .metric-label{font-size:12px; color:var(--muted); margin-top:4px}
     .status-indicator{display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px}
+    
+    /* Light theme support */
+    body.light-theme {
+      --bg: #f8f9fa; --panel: #ffffff; --muted: #6c757d; --text: #212529;
+      --border: #dee2e6; --chip: #e9ecef;
+      background: linear-gradient(180deg, #f8f9fa, #ffffff);
+    }
+    body.light-theme .side { background: rgba(255, 255, 255, 0.95); }
+    body.light-theme .metric-box { background: linear-gradient(135deg, #ffffff, #f8f9fa); }
+    body.light-theme .chart-container canvas { background: rgba(248, 249, 250, 0.5); }
+    body.light-theme th { background: #f8f9fa; }
+    body.light-theme .empty { background: #f8f9fa; border-color: #dee2e6; }
+    
+    /* Improved visual hierarchy */
+    .section-header { margin: 20px 0 10px 0; font-size: 18px; font-weight: 600; color: var(--brand); }
+    .action-group { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+    .action-group .btn { flex: 1; min-width: 120px; }
+    
+    /* Status indicators */
+    .status-online { background: #22c55e; }
+    .status-offline { background: #ef4444; }
+    .status-unknown { background: #6b7280; }
     .status-indicator.good{background:#44d3a8}
     .status-indicator.warning{background:#ffb020}
     .status-indicator.critical{background:#ff5d5d}
@@ -379,21 +409,35 @@
 
         <section class="card half">
           <h3>Session Length Distribution</h3>
-          <div class="chart-container">
+          <div class="chart-container" style="height:200px">
             <canvas id="sessionDistChart"></canvas>
           </div>
         </section>
 
+        <section class="card half">
+          <h3>Daily Player Counts (Last 7 Days)</h3>
+          <div class="chart-container" style="height:200px">
+            <canvas id="dailyPlayerChart"></canvas>
+          </div>
+        </section>
+
         <section class="card">
-          <h3>Hourly Activity Pattern</h3>
+          <h3>Hourly Activity Heatmap (Last 7 Days)</h3>
           <div class="chart-container" style="height:250px">
             <canvas id="hourlyActivityChart"></canvas>
           </div>
         </section>
 
-        <section class="card">
-          <h3>Command Usage</h3>
-          <div id="commandStats" style="max-height:300px; overflow-y:auto"></div>
+        <section class="card half">
+          <h3>Top Commands Usage</h3>
+          <div class="chart-container" style="height:250px">
+            <canvas id="commandChart"></canvas>
+          </div>
+        </section>
+
+        <section class="card half">
+          <h3>Command Usage Stats</h3>
+          <div id="commandStats" style="max-height:250px; overflow-y:auto"></div>
         </section>
       </div>
 
@@ -846,6 +890,8 @@
     let sessionDistChart = null;
     let hourlyActivityChart = null;
     let systemChart = null;
+    let commandChart = null;
+    let dailyPlayerChart = null;
 
     // Authentication handling - session-based (no more hardcoded auth headers)
     
@@ -1258,7 +1304,7 @@
         $('#networkRx').textContent = data.network?.rxRate ? data.network.rxRate + ' KB/s' : '—';
         $('#networkTx').textContent = data.network?.txRate ? data.network.txRate + ' KB/s' : '—';
         $('#systemUptime').textContent = data.uptime ? fmtDur(data.uptime) : '—';
-        $('#systemLoad').textContent = data.load?.1 ? data.load[1].toFixed(2) : '—';
+        $('#systemLoad').textContent = data.load?.[1] ? data.load[1].toFixed(2) : '—';
       } catch (e) {
         console.error('Failed to update live metrics:', e);
       }
@@ -1342,9 +1388,18 @@
       try {
         const data = await jget('/api/server/status');
         
-        $('#serverSystemStatus').textContent = data.system_status || '—';
+        // Update status with indicators
+        const systemStatus = data.system_status || 'unknown';
+        const statusClass = systemStatus === 'active' ? 'status-online' : 
+                           systemStatus === 'inactive' ? 'status-offline' : 'status-unknown';
+        $('#serverSystemStatus').innerHTML = `<span class="status-indicator ${statusClass}"></span>${systemStatus}`;
+        
         $('#serverOnlinePlayers').textContent = data.online_players || '0';
-        $('#serverRconStatus').textContent = data.rcon_available ? 'Available' : 'Unavailable';
+        
+        const rconStatus = data.rcon_available ? 'Available' : 'Unavailable';
+        const rconClass = data.rcon_available ? 'status-online' : 'status-offline';
+        $('#serverRconStatus').innerHTML = `<span class="status-indicator ${rconClass}"></span>${rconStatus}`;
+        
         $('#serverLastAction').textContent = data.recent_actions && data.recent_actions.length > 0 ? 
           fmtDate(data.recent_actions[0].at) : '—';
         
@@ -1352,11 +1407,15 @@
         if (data.recent_actions) {
           const historyHtml = data.recent_actions.map(action => {
             const actionData = JSON.parse(action.data || '{}');
-            return `<div class="audit-item">
-              <div class="audit-action">${action.action.replace('server_', '').toUpperCase()}</div>
-              <div class="audit-time">${fmtDate(action.at)}</div>
-              <div class="audit-ip">by ${action.by_ip}</div>
-              ${actionData.broadcast ? `<div class="audit-extra">Message: ${escapeHtml(actionData.broadcast)}</div>` : ''}
+            return `<div class="audit-item" style="padding:8px; border-bottom:1px solid var(--border); margin-bottom:8px">
+              <div style="display:flex; justify-content:space-between; align-items:center">
+                <div>
+                  <div class="audit-action" style="font-weight:600; color:var(--brand)">${action.action.replace('server_', '').toUpperCase()}</div>
+                  <div class="audit-ip small">by ${action.by_ip}</div>
+                </div>
+                <div class="audit-time small">${fmtDate(action.at)}</div>
+              </div>
+              ${actionData.broadcast ? `<div class="audit-extra small" style="margin-top:4px; color:var(--muted)">Message: ${escapeHtml(actionData.broadcast)}</div>` : ''}
             </div>`;
           }).join('');
           $('#serverActionHistory').innerHTML = historyHtml || '<div class="empty">No recent actions</div>';
@@ -1425,6 +1484,7 @@
         
         // Update command stats
         if (data.command_stats) {
+          // Update text list
           const commandsHtml = data.command_stats.slice(0, 10).map(cmd => 
             `<div class="small" style="display:flex; justify-content:space-between; margin-bottom:4px">
               <span><code>${escapeHtml(cmd.command)}</code></span>
@@ -1432,7 +1492,13 @@
             </div>`
           ).join('');
           $('#commandStats').innerHTML = commandsHtml || '<div class="empty">No command data</div>';
+          
+          // Update command chart
+          updateCommandChart(data.command_stats);
         }
+        
+        // Load additional analytics data
+        await loadAdditionalAnalytics();
         
       } catch (e) {
         console.error('Failed to load analytics:', e);
@@ -1543,6 +1609,93 @@
           }
         }
       });
+    }
+
+    // Command usage chart
+    function updateCommandChart(data) {
+      const ctx = $('#commandChart').getContext('2d');
+      
+      if (window.commandChart) {
+        window.commandChart.destroy();
+      }
+      
+      // Take top 10 commands
+      const topCommands = data.slice(0, 10);
+      
+      window.commandChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: topCommands.map(cmd => cmd.command),
+          datasets: [{
+            label: 'Usage Count',
+            data: topCommands.map(cmd => cmd.usage_count),
+            backgroundColor: 'rgba(68, 211, 168, 0.6)',
+            borderColor: '#44d3a8',
+            borderWidth: 1
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false }
+          },
+          scales: {
+            y: { beginAtZero: true }
+          }
+        }
+      });
+    }
+
+    // Daily player chart
+    function updateDailyPlayerChart(data) {
+      const ctx = $('#dailyPlayerChart').getContext('2d');
+      
+      if (window.dailyPlayerChart) {
+        window.dailyPlayerChart.destroy();
+      }
+      
+      window.dailyPlayerChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: data.map(d => new Date(d.date).toLocaleDateString()),
+          datasets: [{
+            label: 'Unique Players',
+            data: data.map(d => d.unique_players || 0),
+            borderColor: '#7c5cff',
+            backgroundColor: 'rgba(124, 92, 255, 0.1)',
+            fill: true,
+            tension: 0.4
+          }, {
+            label: 'Total Sessions',
+            data: data.map(d => d.total_sessions || 0),
+            borderColor: '#44d3a8',
+            backgroundColor: 'rgba(68, 211, 168, 0.1)',
+            fill: false,
+            tension: 0.4
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            y: { beginAtZero: true }
+          }
+        }
+      });
+    }
+
+    // Load additional analytics data
+    async function loadAdditionalAnalytics() {
+      try {
+        // Load daily player data for the last 7 days
+        const playerTrend = await jget('/api/analytics/player-trend?days=7');
+        if (playerTrend) {
+          updateDailyPlayerChart(playerTrend);
+        }
+      } catch (e) {
+        console.error('Failed to load additional analytics:', e);
+      }
     }
 
     // System Monitoring
@@ -1756,6 +1909,25 @@
         }
       }).catch(e => toast('Failed to load preset'));
     });
+
+    // Theme switcher
+    $('#themeSelect').addEventListener('change', (e) => {
+      const theme = e.target.value;
+      if (theme === 'light') {
+        document.body.classList.add('light-theme');
+        localStorage.setItem('panel-theme', 'light');
+      } else {
+        document.body.classList.remove('light-theme');
+        localStorage.setItem('panel-theme', 'dark');
+      }
+    });
+
+    // Load saved theme
+    const savedTheme = localStorage.getItem('panel-theme');
+    if (savedTheme === 'light') {
+      document.body.classList.add('light-theme');
+      $('#themeSelect').value = 'light';
+    }
 
     // Enhanced initialization with proper DOM ready handling
     function initializeApp() {
