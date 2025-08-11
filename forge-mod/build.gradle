@@ -25,56 +25,17 @@ java.toolchain.languageVersion = JavaLanguageVersion.of(17)
 
 println "Java: ${System.getProperty 'java.version'}, JVM: ${System.getProperty 'java.vm.version'} (${System.getProperty 'java.vendor'}), Arch: ${System.getProperty 'os.arch'}"
 minecraft {
-    // The mappings can be changed at any time and must be in the following format.
-    // Channel:   Version:
-    // official   MCVersion             Official field/method names from Mojang mapping files
-    // parchment  YYYY.MM.DD-MCVersion  Open community-sourced parameter names and javadocs layered on top of official
-
-    // You must be aware of the Mojang license when using the 'official' or 'parchment' mappings.
-    // See more information here: https://github.com/MinecraftForge/MCPConfig/blob/master/Mojang.md
-
-    // Parchment is an unofficial project maintained by ParchmentMC, separate from MinecraftForge
-    // Additional info can be found at https://parchmentmc.org
-
-    // Use the channel and version specified below.
-    // snapshot_20230317 = Parchment snapshot from 2023-03-17
-    // 1.20.1 = Minecraft version
     mappings channel: 'official', version: '1.20.1'
 
-    // When true, this property will have all Eclipse launch configurations run the folder 'eclipse' by default.
-    // When false, it will run the folder 'run' by default.
-    // In most cases you should not touch this property.
-    // eclipseRunDir = 'run'
-
-    // The user_dev workspace (used by the userdev plugin) is where the run configurations are.
-    // In most cases you should not touch this property.
-    // userdevPath = 'userdev'   <--- REMOVED
-
-    // Default run configurations.
-    // These can be tweaked, removed, or duplicated as needed.
     runs {
-        // applies to all the run configs below
         configureEach {
             workingDirectory project.file('run')
-
-            // Recommended logging data for a userdev environment
-            // The markers can be added/remove as needed separated by commas.
-            // "SCAN": For mods scan.
-            // "REGISTRIES": For firing of registry events.
-            // "REGISTRYDUMP": For getting the contents of all registries.
             property 'forge.logging.markers', 'REGISTRIES'
-
-            // Recommended logging level for the console
-            // You can set various levels here.
-            // Please read: https://stackoverflow.com/questions/2031163/when-to-use-the-different-log-levels
             property 'forge.logging.console.level', 'debug'
-
-            // Comma-separated list of namespaces to load gametests from. Empty = all namespaces.
             property 'forge.enabledGameTestNamespaces', 'mcpanel'
-
             mods {
                 mcpanel {
-                    sourceSet sourceSets.main
+                    source sourceSets.main
                 }
             }
         }
@@ -88,7 +49,6 @@ minecraft {
         }
 
         data {
-            // example of overriding the workingDirectory set above
             workingDirectory project.file('run-data')
             args '--mod', 'mcpanel', '--all', '--output', file('src/generated/resources/'), '--existing', file('src/main/resources/')
         }
