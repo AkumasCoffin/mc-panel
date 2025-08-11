@@ -84,7 +84,7 @@ public class PlayerDataCollector {
             status.addProperty("last_action_time", lastActionTime);
             
             // Connection info
-            status.addProperty("ping", player.connection.latency);
+            status.addProperty("ping", player.connection.getLatency());
             status.addProperty("ip_address", player.connection.getRemoteAddress().toString());
             
             playerInfo.add("status", status);
