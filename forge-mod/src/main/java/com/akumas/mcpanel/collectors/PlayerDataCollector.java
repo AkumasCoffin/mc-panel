@@ -12,6 +12,8 @@ import net.minecraft.stats.Stat;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.core.Holder;
+import net.minecraft.advancements.Advancement;
+import net.minecraft.advancements.AdvancementProgress;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonArray;
@@ -173,13 +175,16 @@ public class PlayerDataCollector {
             }
             playerInfo.add("statistics", statistics);
             
-            // Advancements count - get advancement progress map size instead of save() which returns void
+            // Advancements count - count completed advancements
             int advancementCount = 0;
             try {
-                // Count completed advancements by getting the advancement manager
-                advancementCount = player.getAdvancements().getOrStartProgress(
-                    player.getServer().getAdvancements().getAllAdvancements().iterator().next()
-                ).getProgress().size();
+                // Get all advancements and count completed ones
+                for (Advancement advancement : player.getServer().getAdvancements().getAllAdvancements()) {
+                    AdvancementProgress progress = player.getAdvancements().getOrStartProgress(advancement);
+                    if (progress.isDone()) {
+                        advancementCount++;
+                    }
+                }
             } catch (Exception e) {
                 // Fallback: just set to 0 if we can't get advancement count
                 advancementCount = 0;

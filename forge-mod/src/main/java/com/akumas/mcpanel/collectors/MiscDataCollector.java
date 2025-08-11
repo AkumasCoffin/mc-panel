@@ -185,8 +185,8 @@ public class MiscDataCollector {
                     
                     for (String criterion : advancement.getCriteria().keySet()) {
                         totalCriteria++;
-                        // isDone() method signature changed - no longer takes a criterion parameter
-                        if (progress.isDone()) {
+                        // Check if specific criterion is completed
+                        if (progress.getCriterionProgress(criterion).isDone()) {
                             completedCriteria++;
                         }
                     }
