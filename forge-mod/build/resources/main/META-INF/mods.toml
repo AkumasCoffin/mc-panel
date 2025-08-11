@@ -13,7 +13,23 @@ displayURL="https://github.com/AkumasCoffin/mc-panel"
 description='''
 Server-side data collection mod for MC Panel web interface.
 Collects comprehensive server metrics, player data, world state, and performance information.
-Note: This is a basic implementation that will be enhanced with full Minecraft integration.
+Provides REST API endpoints for real-time server monitoring.
+
+This mod is designed with crash-safe fallback mechanisms and will work even
+if full Forge integration is not available.
 '''
 
-# Note: Dependencies will be added when full Forge integration is implemented
+# Dependencies made optional to prevent crashes
+[[dependencies.mcpanel]]
+    modId="forge"
+    mandatory=false
+    versionRange="[47,)"
+    ordering="NONE"
+    side="BOTH"
+
+[[dependencies.mcpanel]]
+    modId="minecraft"
+    mandatory=false
+    versionRange="[1.20.1,1.21)"
+    ordering="NONE"
+    side="BOTH"

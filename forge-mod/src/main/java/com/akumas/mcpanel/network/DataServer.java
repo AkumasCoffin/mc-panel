@@ -16,12 +16,16 @@ public class DataServer {
     private final int port;
     private HttpServer server;
     
+    public DataServer() {
+        this(25580); // Default port
+    }
+    
     public DataServer(int port) {
         this.port = port;
     }
     
     public void start() throws IOException {
-        server = HttpServer.create(new InetSocketAddress("0.0.0.0", port), 0);
+        server = HttpServer.create(new InetSocketAddress("localhost", port), 0);
         
         // Set up endpoints
         server.createContext("/api/all", new AllDataHandler());
@@ -47,18 +51,27 @@ public class DataServer {
     }
     
     private void sendResponse(HttpExchange exchange, JsonObject data) throws IOException {
-        // Add CORS headers
-        exchange.getResponseHeaders().add("Access-Control-Allow-Origin", "*");
-        exchange.getResponseHeaders().add("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-        exchange.getResponseHeaders().add("Access-Control-Allow-Headers", "Content-Type");
-        exchange.getResponseHeaders().add("Content-Type", "application/json");
-        
-        String response = data.toString();
-        byte[] responseBytes = response.getBytes(StandardCharsets.UTF_8);
-        
-        exchange.sendResponseHeaders(200, responseBytes.length);
-        try (OutputStream os = exchange.getResponseBody()) {
-            os.write(responseBytes);
+        try {
+            // Add CORS headers
+            exchange.getResponseHeaders().add("Access-Control-Allow-Origin", "*");
+            exchange.getResponseHeaders().add("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+            exchange.getResponseHeaders().add("Access-Control-Allow-Headers", "Content-Type");
+            exchange.getResponseHeaders().add("Content-Type", "application/json; charset=UTF-8");
+            
+            String response = data.toString();
+            byte[] responseBytes = response.getBytes(StandardCharsets.UTF_8);
+            
+            exchange.sendResponseHeaders(200, responseBytes.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(responseBytes);
+                os.flush();
+            }
+            
+            LOGGER.info("Sent response: " + response.substring(0, Math.min(100, response.length())) + 
+                       (response.length() > 100 ? "..." : ""));
+        } catch (Exception e) {
+            LOGGER.severe("Error sending response: " + e.getMessage());
+            throw e;
         }
     }
     
@@ -213,6 +226,7 @@ public class DataServer {
     class StatusHandler implements HttpHandler {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
+            LOGGER.info("Handling request to: " + exchange.getRequestURI().getPath());
             try {
                 if ("GET".equals(exchange.getRequestMethod())) {
                     JsonObject status = new JsonObject();
@@ -225,6 +239,7 @@ public class DataServer {
                 }
             } catch (Exception e) {
                 LOGGER.severe("Error handling /api/status request: " + e.getMessage());
+                e.printStackTrace();
                 sendError(exchange, "Internal server error");
             }
         }
