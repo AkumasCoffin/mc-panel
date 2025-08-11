@@ -9,7 +9,6 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonArray;
 
 import java.util.List;
-import java.util.stream.Collectors;
 
 public class ModDataCollector {
     private final MinecraftServer server;
@@ -24,14 +23,13 @@ public class ModDataCollector {
         
         // Get all loaded mods
         ModList modList = ModList.get();
-        List<IModInfo> mods = modList.getMods().stream()
-            .map(ModContainer::getModInfo)
-            .collect(Collectors.toList()); // Get IModInfo from ModContainer
+        List<ModContainer> mods = modList.getMods(); // Use getMods() instead of getAllMods()
         
         modData.addProperty("total_mods", mods.size());
         
-        for (IModInfo info : mods) {
+        for (ModContainer mod : mods) {
             JsonObject modInfo = new JsonObject();
+            IModInfo info = mod.getModInfo();
             
             modInfo.addProperty("mod_id", info.getModId());
             modInfo.addProperty("display_name", info.getDisplayName());
