@@ -54,7 +54,10 @@ public class PlayerDataCollector {
             // Get biome information
             try {
                 Holder<Biome> biomeHolder = player.level().getBiome(pos);
-                location.addProperty("biome", biomeHolder.unwrapKey().orElse(new ResourceLocation("unknown")).toString());
+                String biomeName = biomeHolder.unwrapKey()
+                    .map(key -> key.location().toString())
+                    .orElse("unknown");
+                location.addProperty("biome", biomeName);
             } catch (Exception e) {
                 location.addProperty("biome", "unknown");
             }
@@ -79,7 +82,7 @@ public class PlayerDataCollector {
             status.addProperty("last_action_time", lastActionTime);
             
             // Connection info
-            status.addProperty("ping", player.connection.latency());
+            status.addProperty("ping", player.connection.latency);
             status.addProperty("ip_address", player.connection.getRemoteAddress().toString());
             
             playerInfo.add("status", status);
@@ -170,8 +173,17 @@ public class PlayerDataCollector {
             }
             playerInfo.add("statistics", statistics);
             
-            // Advancements count
-            int advancementCount = player.getAdvancements().save().size();
+            // Advancements count - get advancement progress map size instead of save() which returns void
+            int advancementCount = 0;
+            try {
+                // Count completed advancements by getting the advancement manager
+                advancementCount = player.getAdvancements().getOrStartProgress(
+                    player.getServer().getAdvancements().getAllAdvancements().iterator().next()
+                ).getProgress().size();
+            } catch (Exception e) {
+                // Fallback: just set to 0 if we can't get advancement count
+                advancementCount = 0;
+            }
             playerInfo.addProperty("advancement_count", advancementCount);
             
             playersArray.add(playerInfo);

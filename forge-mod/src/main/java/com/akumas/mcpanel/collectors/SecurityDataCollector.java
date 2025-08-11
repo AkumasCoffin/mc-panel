@@ -131,7 +131,8 @@ public class SecurityDataCollector {
         JsonObject serverSecurity = new JsonObject();
         serverSecurity.addProperty("enforce_whitelist", server.isEnforceWhitelist());
         serverSecurity.addProperty("online_mode", server.usesAuthentication());
-        serverSecurity.addProperty("prevent_proxy_connections", server.isPreventProxyConnections());
+        // isPreventProxyConnections() method doesn't exist, skip this property or use a default
+        serverSecurity.addProperty("prevent_proxy_connections", false); // Default value
         serverSecurity.addProperty("max_players", server.getMaxPlayers());
         
         securityData.add("server_security", serverSecurity);

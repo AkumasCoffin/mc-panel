@@ -51,7 +51,8 @@ public class WorldDataCollector {
             border.addProperty("center_x", level.getWorldBorder().getCenterX());
             border.addProperty("center_z", level.getWorldBorder().getCenterZ());
             border.addProperty("size", level.getWorldBorder().getSize());
-            border.addProperty("damage_amount", level.getWorldBorder().getDamageAmount());
+            // getDamageAmount() method doesn't exist in this version, use getDamagePerBlock()
+            border.addProperty("damage_amount", level.getWorldBorder().getDamagePerBlock());
             border.addProperty("damage_buffer", level.getWorldBorder().getDamageSafeZone());
             worldInfo.add("world_border", border);
             
