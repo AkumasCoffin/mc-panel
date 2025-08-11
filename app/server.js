@@ -5,6 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const http = require('http');
 const express = require('express');
+const session = require('express-session');
 const { spawn, execFile } = require('child_process');
 const cron = require('node-cron');
 const cronParser = require('cron-parser');
@@ -22,6 +23,7 @@ const TRUST_PROXY = !!Number(process.env.TRUST_PROXY || 0);
 
 const PANEL_USER = process.env.PANEL_USER || 'admin';
 const PANEL_PASS = process.env.PANEL_PASS || 'changeme';
+const SESSION_SECRET = process.env.SESSION_SECRET || require('crypto').randomBytes(32).toString('hex');
 
 const MC_SERVER_PATH = process.env.MC_SERVER_PATH || process.env.SERVER_DIR || '/root/mc-server-backup';
 const MC_SERVICE_NAME = process.env.MC_SERVICE_NAME || 'minecraft.service';
@@ -34,20 +36,32 @@ const app = express();
 if (TRUST_PROXY) app.set('trust proxy', 1);
 app.use(express.json());
 
-// Basic Auth (no dep)
-function basicAuth(req, res, next) {
-  const hdr = req.headers.authorization || '';
-  if (!hdr.startsWith('Basic ')) {
-    res.set('WWW-Authenticate', 'Basic realm="panel"');
-    return res.status(401).send('Authentication required.');
+// Session middleware with secure configuration
+app.use(session({
+  secret: SESSION_SECRET,
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    secure: false, // Set to true when using HTTPS in production
+    httpOnly: true,
+    sameSite: 'lax',
+    maxAge: 172800000 // 48 hours in milliseconds (48 * 60 * 60 * 1000)
   }
-  const raw = Buffer.from(hdr.slice(6), 'base64').toString('utf8');
-  const i = raw.indexOf(':');
-  const user = i >= 0 ? raw.slice(0, i) : raw;
-  const pass = i >= 0 ? raw.slice(i + 1) : '';
-  if (user === PANEL_USER && pass === PANEL_PASS) return next();
-  res.set('WWW-Authenticate', 'Basic realm="panel"');
-  return res.status(401).send('Authentication required.');
+}));
+
+// Session-based authentication middleware
+function requireAuth(req, res, next) {
+  if (req.session && req.session.authenticated) {
+    return next();
+  }
+  
+  // For API requests, return JSON error
+  if (req.path.startsWith('/api/')) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+  
+  // For browser requests, redirect to login
+  return res.redirect('/login');
 }
 
 // Static UI (no-store for index.html so proxies don’t cache old shell)
@@ -62,6 +76,68 @@ app.use(express.static(PUBLIC_DIR, {
     }
   }
 }));
+
+// ---------- AUTHENTICATION ENDPOINTS ----------
+// Login page
+app.get('/login', (req, res) => {
+  // If already authenticated, redirect to main app
+  if (req.session && req.session.authenticated) {
+    return res.redirect('/');
+  }
+  
+  const loginPath = path.join(PUBLIC_DIR, 'login.html');
+  if (fs.existsSync(loginPath)) {
+    res.set('Cache-Control', 'no-store');
+    return res.sendFile(loginPath);
+  }
+  res.status(500).send('Login page not found. Place login.html in app/public.');
+});
+
+// Login endpoint
+app.post('/login', (req, res) => {
+  const { username, password } = req.body || {};
+  
+  if (!username || !password) {
+    return res.status(400).json({ error: 'Username and password required' });
+  }
+  
+  // Check credentials
+  if (username === PANEL_USER && password === PANEL_PASS) {
+    req.session.authenticated = true;
+    req.session.username = username;
+    req.session.loginTime = new Date().toISOString();
+    
+    // Log successful login
+    audit('login', { username, ip: req.ip, at: req.session.loginTime }).catch(() => {});
+    
+    res.json({ success: true, message: 'Login successful' });
+  } else {
+    // Log failed login attempt
+    audit('login_failed', { username, ip: req.ip, at: new Date().toISOString() }).catch(() => {});
+    
+    res.status(401).json({ error: 'Invalid username or password' });
+  }
+});
+
+// Logout endpoint
+app.post('/logout', (req, res) => {
+  if (req.session) {
+    const username = req.session.username;
+    req.session.destroy((err) => {
+      if (err) {
+        console.error('Error destroying session:', err);
+        return res.status(500).json({ error: 'Logout failed' });
+      }
+      
+      // Log logout
+      audit('logout', { username, ip: req.ip, at: new Date().toISOString() }).catch(() => {});
+      
+      res.json({ success: true, message: 'Logout successful' });
+    });
+  } else {
+    res.json({ success: true, message: 'Already logged out' });
+  }
+});
 
 // ---------- In-memory live state via log tail ----------
 const playersByName = new Map(); // name -> record
@@ -282,17 +358,17 @@ async function nextRestartInfo() {
 }
 
 // ---------- API ----------
-app.get('/api/status', basicAuth, async (req, res) => {
+app.get('/api/status', requireAuth, async (req, res) => {
   const nxt = await nextRestartInfo();
   res.json({ online: true, rcon: rconEnabled(), ...nxt });
 });
 
-app.get('/api/online', basicAuth, (req, res) => {
+app.get('/api/online', requireAuth, (req, res) => {
   const online = [...playersByName.values()].filter(p => p.online);
   res.json({ players: online.map(p => ({ username: p.username, uuid: p.uuid || null })), count: online.length });
 });
 
-app.get('/api/players', basicAuth, (req, res) => {
+app.get('/api/players', requireAuth, (req, res) => {
   const allPlayers = [...playersByName.values()];
   allPlayers.sort((a, b) => String(b.last_seen || '').localeCompare(String(a.last_seen || '')));
   res.json(allPlayers.map(p => ({
@@ -306,7 +382,7 @@ app.get('/api/players', basicAuth, (req, res) => {
   })));
 });
 
-app.get('/api/player/:id', basicAuth, async (req, res) => {
+app.get('/api/player/:id', requireAuth, async (req, res) => {
   const id = Number(req.params.id);
   const p = [...playersByName.values()].find(x => x.id === id);
   if (!p) return res.status(404).json({ error: 'not found' });
@@ -327,7 +403,7 @@ app.get('/api/player/:id', basicAuth, async (req, res) => {
 });
 
 // Commands
-app.post('/api/command', basicAuth, validateCommandInput, async (req, res) => {
+app.post('/api/command', requireAuth, validateCommandInput, async (req, res) => {
   const cmd = req.validatedCommand;
   await audit('panel_command', { cmd, from: req.ip, at: new Date().toISOString() });
 
@@ -348,7 +424,7 @@ app.post('/api/command', basicAuth, validateCommandInput, async (req, res) => {
 });
 
 // Bans (filesystem)
-app.get('/api/bans', basicAuth, (req, res) => {
+app.get('/api/bans', requireAuth, (req, res) => {
   const pjson = readJsonSafe(BANNED_PLAYERS_JSON) || [];
   const ijson = readJsonSafe(BANNED_IPS_JSON) || [];
   const players = pjson.map(row => {
@@ -379,34 +455,34 @@ app.get('/api/bans', basicAuth, (req, res) => {
 });
 
 // Presets
-app.get('/api/broadcast-presets', basicAuth, async (req, res) => {
+app.get('/api/broadcast-presets', requireAuth, async (req, res) => {
   const rows = await all('SELECT id,label,message FROM broadcast_presets ORDER BY id DESC'); res.json(rows);
 });
-app.post('/api/broadcast-presets', basicAuth, validateStringInput('label', 100), validateStringInput('message', 1000), async (req, res) => {
+app.post('/api/broadcast-presets', requireAuth, validateStringInput('label', 100), validateStringInput('message', 1000), async (req, res) => {
   const { label, message } = req.body || {};
   if (!message) return res.status(400).json({ error: 'message required' });
   await run('INSERT OR REPLACE INTO broadcast_presets(label,message) VALUES(?,?)', [label || null, String(message)]);
   res.status(201).json({ ok: true });
 });
-app.delete('/api/broadcast-presets/:id', basicAuth, async (req, res) => {
+app.delete('/api/broadcast-presets/:id', requireAuth, async (req, res) => {
   await run('DELETE FROM broadcast_presets WHERE id=?', [Number(req.params.id)]); res.json({ ok: true });
 });
 
-app.get('/api/ban-presets', basicAuth, async (req, res) => {
+app.get('/api/ban-presets', requireAuth, async (req, res) => {
   const rows = await all('SELECT id,label,reason FROM ban_presets ORDER BY id DESC'); res.json(rows);
 });
-app.post('/api/ban-presets', basicAuth, validateStringInput('label', 100), validateStringInput('reason', 500), async (req, res) => {
+app.post('/api/ban-presets', requireAuth, validateStringInput('label', 100), validateStringInput('reason', 500), async (req, res) => {
   const { label, reason } = req.body || {};
   if (!reason) return res.status(400).json({ error: 'reason required' });
   await run('INSERT OR REPLACE INTO ban_presets(label,reason) VALUES(?,?)', [label || null, String(reason)]);
   res.status(201).json({ ok: true });
 });
-app.delete('/api/ban-presets/:id', basicAuth, async (req, res) => {
+app.delete('/api/ban-presets/:id', requireAuth, async (req, res) => {
   await run('DELETE FROM ban_presets WHERE id=?', [Number(req.params.id)]); res.json({ ok: true });
 });
 
 // Use presets
-app.post('/api/broadcast', basicAuth, validateStringInput('message', 1000), async (req, res) => {
+app.post('/api/broadcast', requireAuth, validateStringInput('message', 1000), async (req, res) => {
   const { message, presetId } = req.body || {};
   let msg = String(message || '').trim();
   if (!msg && presetId) {
@@ -425,7 +501,7 @@ app.post('/api/broadcast', basicAuth, validateStringInput('message', 1000), asyn
   }
 });
 
-app.post('/api/ban', basicAuth, validateStringInput('username', 50), validateStringInput('reason', 500), async (req, res) => {
+app.post('/api/ban', requireAuth, validateStringInput('username', 50), validateStringInput('reason', 500), async (req, res) => {
   const { username, reason, presetId } = req.body || {};
   if (!username) return res.status(400).json({ error: 'username required' });
   let why = String(reason || '').trim();
@@ -446,10 +522,10 @@ app.post('/api/ban', basicAuth, validateStringInput('username', 50), validateStr
 });
 
 // Schedules CRUD
-app.get('/api/schedules', basicAuth, async (req, res) => {
+app.get('/api/schedules', requireAuth, async (req, res) => {
   const rows = await all('SELECT * FROM schedules ORDER BY id DESC'); res.json(rows);
 });
-app.post('/api/schedules', basicAuth, validateStringInput('label', 100), async (req, res) => {
+app.post('/api/schedules', requireAuth, validateStringInput('label', 100), async (req, res) => {
   const { cron: expr, label } = req.body || {};
   if (!expr || !cron.validate(expr)) return res.status(400).json({ error: 'bad cron' });
   const r = await run('INSERT INTO schedules(cron,label,enabled) VALUES(?,?,1)', [expr, label || null]);
@@ -457,7 +533,7 @@ app.post('/api/schedules', basicAuth, validateStringInput('label', 100), async (
   await scheduleRow(row);
   res.status(201).json(row);
 });
-app.post('/api/schedules/:id/toggle', basicAuth, async (req, res) => {
+app.post('/api/schedules/:id/toggle', requireAuth, async (req, res) => {
   const id = Number(req.params.id);
   const row = await get('SELECT * FROM schedules WHERE id=?', [id]); if (!row) return res.status(404).json({ error: 'not found' });
   const enabled = row.enabled ? 0 : 1;
@@ -466,13 +542,13 @@ app.post('/api/schedules/:id/toggle', basicAuth, async (req, res) => {
   if (enabled) await scheduleRow({ ...row, enabled });
   res.json({ ok: true });
 });
-app.delete('/api/schedules/:id', basicAuth, async (req, res) => {
+app.delete('/api/schedules/:id', requireAuth, async (req, res) => {
   const id = Number(req.params.id);
   unschedule(id); await run('DELETE FROM schedules WHERE id=?', [id]); res.json({ ok: true });
 });
 
 // Audit feed
-app.get('/api/audit', basicAuth, async (req, res) => {
+app.get('/api/audit', requireAuth, async (req, res) => {
   const rows = await all('SELECT id, action, payload, created_at FROM panel_audit ORDER BY id DESC LIMIT 200');
   res.json(rows.map(r => ({ id: r.id, action: r.action, created_at: r.created_at, payload: JSON.parse(r.payload || '{}') })));
 });
@@ -481,7 +557,7 @@ app.get('/api/audit', basicAuth, async (req, res) => {
 app.get('/health', (req, res) => res.json({ ok: true }));
 
 // Fallback -> UI (also mark no-store for index shell)
-app.get('*', (req, res) => {
+app.get('*', requireAuth, (req, res) => {
   const indexPath = path.join(PUBLIC_DIR, 'index.html');
   if (fs.existsSync(indexPath)) {
     res.set('Cache-Control', 'no-store');

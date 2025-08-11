@@ -97,8 +97,9 @@
 
     <main class="main">
       <div class="toolbar">
-        <div class="chip">Basic Auth protected</div>
+        <div class="chip">Session authenticated</div>
         <div id="tip" class="chip">Tip: click a player to open details</div>
+        <button class="btn ghost" id="logoutBtn">Logout</button>
         <button class="btn ghost right" id="refreshBtn">↻ Refresh</button>
       </div>
 
@@ -308,37 +309,51 @@
     function fmtDur(sec){ if(sec==null) return '—'; sec = Math.max(0, +sec|0); const h = Math.floor(sec/3600), m = Math.floor((sec%3600)/60), s = sec%60; const parts = []; if(h) parts.push(h+'h'); if(m||h) parts.push((h?String(m).padStart(2,'0'):m)+'m'); parts.push(String(s).padStart(2,'0')+'s'); return parts.join(' '); }
     function escapeHtml(s){ return (s||'').replace(/[&<>"]/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
-    // Authentication handling
-    let authString = 'YWRtaW46Y2hhbmdlbWU='; // Default: admin:changeme in base64
+    // Authentication handling - session-based (no more hardcoded auth headers)
     
-    function getAuthHeaders() {
-      return {
-        'Authorization': 'Basic ' + authString,
-        'Content-Type': 'application/json'
-      };
-    }
-    
-    // Simple fetch functions with authentication
+    // Simple fetch functions with session-based authentication
     async function jget(url){ 
-      const r = await fetch(url, { headers: getAuthHeaders() }); 
-      if(!r.ok) throw new Error(await r.text()); 
+      const r = await fetch(url, { credentials: 'same-origin' }); 
+      if(!r.ok) {
+        if (r.status === 401) {
+          // Redirect to login on unauthorized
+          window.location.href = '/login';
+          return;
+        }
+        throw new Error(await r.text()); 
+      }
       return r.json(); 
     }
     async function jpost(url,data){ 
       const r = await fetch(url,{
         method:'POST',
-        headers: getAuthHeaders(),
-        body:JSON.stringify(data||{})
+        headers: { 'Content-Type': 'application/json' },
+        body:JSON.stringify(data||{}),
+        credentials: 'same-origin'
       }); 
-      if(!r.ok) throw new Error(await r.text()); 
+      if(!r.ok) {
+        if (r.status === 401) {
+          // Redirect to login on unauthorized
+          window.location.href = '/login';
+          return;
+        }
+        throw new Error(await r.text()); 
+      }
       return r.json(); 
     }
     async function jdel(url){ 
       const r = await fetch(url,{
         method:'DELETE',
-        headers: getAuthHeaders()
+        credentials: 'same-origin'
       }); 
-      if(!r.ok) throw new Error(await r.text()); 
+      if(!r.ok) {
+        if (r.status === 401) {
+          // Redirect to login on unauthorized
+          window.location.href = '/login';
+          return;
+        }
+        throw new Error(await r.text()); 
+      }
       return r.json(); 
     }
 
@@ -367,7 +382,7 @@
         $('#nextRestart').textContent = s.next_restart_iso ? fmtDate(s.next_restart_iso) : '—';
         $('#nextRestart2').textContent = $('#nextRestart').textContent;
         $('#nextRestartIn').textContent = s.next_restart_seconds!=null ? (Math.floor(s.next_restart_seconds/60)+' min') : '—';
-        $('#statusBox').innerHTML = `<div class="row"><div><span class="tag">Panel OK</span></div><div><span class="tag">Auth: Basic</span></div></div><div class="small muted" style="margin-top:8px">Live log tracking enabled.</div>`;
+        $('#statusBox').innerHTML = `<div class="row"><div><span class="tag">Panel OK</span></div><div><span class="tag">Auth: Session</span></div></div><div class="small muted" style="margin-top:8px">Live log tracking enabled.</div>`;
       }catch(e){
         $('#statusChip').innerHTML = 'Status: <span class="tag">error</span>';
         $('#statusBox').innerHTML = '<div class="empty">Could not load /api/status</div>';
@@ -547,6 +562,18 @@
       try{ const result = await jpost('/api/ban', {username, presetId: Number(presetId)}); toast('Ban executed'); $('#cmdOut').textContent = result.out || 'Ban executed successfully'; $('#banUser').value = ''; }catch(e){ toast('Failed: '+e.message); }
     });
 
+    // Logout function
+    async function logout() {
+      try {
+        await jpost('/logout');
+        window.location.href = '/login';
+      } catch (error) {
+        console.error('Logout failed:', error);
+        // Even if logout fails, redirect to login
+        window.location.href = '/login';
+      }
+    }
+
     // Audit
     async function loadAudit(){
       const tbody = $('#auditTable tbody'); tbody.innerHTML = '<tr><td colspan="3" class="small">Loading…</td></tr>';
@@ -566,6 +593,9 @@
       if(active==='presets') loadPresets();
       if(active==='audit') loadAudit();
     });
+
+    // Logout button
+    $('#logoutBtn').addEventListener('click', logout);
 
     // Initial load with automatic refresh
     setTimeout(() => {
