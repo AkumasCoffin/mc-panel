@@ -48,7 +48,7 @@ minecraft {
 
     // The user_dev workspace (used by the userdev plugin) is where the run configurations are.
     // In most cases you should not touch this property.
-    userdevPath = 'userdev'
+    // userdevPath = 'userdev'   <--- REMOVED
 
     // Default run configurations.
     // These can be tweaked, removed, or duplicated as needed.
