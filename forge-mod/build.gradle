@@ -1,11 +1,13 @@
 buildscript {
     repositories {
         // These repositories are only for Gradle plugins, put any other repositories in the repository block further below
-        maven { url = 'https://maven.minecraftforge.net' }
         mavenCentral()
+        gradlePluginPortal()
+        // Try alternative forge repository
+        maven { url = 'https://nexus.covers1624.net/repository/maven-public/' }
     }
     dependencies {
-        classpath group: 'net.minecraftforge.gradle', name: 'ForgeGradle', version: '6.0.24', changing: true
+        classpath group: 'net.minecraftforge.gradle', name: 'ForgeGradle', version: '6.0.21', changing: true
     }
 }
 
@@ -56,10 +58,10 @@ minecraft {
 }
 
 repositories {
-    maven {
-        url = 'https://maven.minecraftforge.net/'
-    }
     mavenCentral()
+    // Try alternative forge repositories
+    maven { url = 'https://nexus.covers1624.net/repository/maven-public/' }
+    maven { url = 'https://modmaven.dev/' }
 }
 
 dependencies {
