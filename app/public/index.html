@@ -82,32 +82,156 @@
     .status-indicator.warning{background:#ffb020}
     .status-indicator.critical{background:#ff5d5d}
   </style>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
   <script>
-    // Simple fallback for Chart.js - create a mock Chart object to prevent errors
-    if (typeof Chart === 'undefined') {
-      window.Chart = function(ctx, config) {
-        // Mock Chart constructor
-        this.destroy = function() {};
-        this.update = function() {};
-        this.resize = function() {};
-        return this;
-      };
+    // Enhanced Chart.js fallback with better visual charts
+    console.log('[panel] Setting up Chart.js fallback...');
+    
+    // Create enhanced mock Chart object
+    window.Chart = function(ctx, config) {
+      if (!ctx || !ctx.canvas || !config) {
+        return { destroy: function() {}, update: function() {}, resize: function() {} };
+      }
       
-      // Chart.js defaults
-      window.Chart.defaults = {
-        color: '#aab3c7',
-        backgroundColor: 'rgba(124, 92, 255, 0.1)',
-        borderColor: '#7c5cff',
-        plugins: { legend: { labels: { color: '#aab3c7' } } },
-        scales: {
-          linear: { grid: { color: 'rgba(171, 179, 199, 0.1)' }, ticks: { color: '#aab3c7' } },
-          category: { grid: { color: 'rgba(171, 179, 199, 0.1)' }, ticks: { color: '#aab3c7' } }
-        }
-      };
+      const canvas = ctx.canvas;
+      const context = canvas.getContext('2d');
+      const data = config.data;
+      const type = config.type;
       
-      console.warn('Chart.js not available - using fallback (charts disabled)');
+      // Clear canvas
+      context.clearRect(0, 0, canvas.width, canvas.height);
+      
+      // Set styling
+      context.fillStyle = '#aab3c7';
+      context.strokeStyle = '#7c5cff';
+      context.font = '12px system-ui';
+      context.textAlign = 'center';
+      
+      if (!data || !data.datasets || data.datasets.length === 0) {
+        // Show "no data" message
+        context.fillText('No chart data available', canvas.width / 2, canvas.height / 2);
+        return { destroy: function() {}, update: function() {}, resize: function() {} };
+      }
+      
+      const dataset = data.datasets[0];
+      const values = dataset.data || [];
+      const labels = data.labels || [];
+      
+      if (values.length === 0) {
+        context.fillText('No data to display', canvas.width / 2, canvas.height / 2);
+        return { destroy: function() {}, update: function() {}, resize: function() {} };
+      }
+      
+      // Simple chart rendering based on type
+      if (type === 'line') {
+        drawLineChart(context, canvas, values, labels);
+      } else if (type === 'bar') {
+        drawBarChart(context, canvas, values, labels);
+      } else if (type === 'doughnut') {
+        drawDoughnutChart(context, canvas, values, labels);
+      } else {
+        context.fillText(`${type} chart (simplified)`, canvas.width / 2, canvas.height / 2);
+        context.fillText(`${values.length} data points`, canvas.width / 2, canvas.height / 2 + 20);
+      }
+      
+      return { destroy: function() {}, update: function() {}, resize: function() {} };
+    };
+    
+    function drawLineChart(ctx, canvas, values, labels) {
+      const padding = 40;
+      const chartWidth = canvas.width - padding * 2;
+      const chartHeight = canvas.height - padding * 2;
+      const maxValue = Math.max(...values, 1);
+      
+      ctx.strokeStyle = '#7c5cff';
+      ctx.fillStyle = 'rgba(124, 92, 255, 0.1)';
+      ctx.lineWidth = 2;
+      
+      // Draw line
+      ctx.beginPath();
+      values.forEach((value, index) => {
+        const x = padding + (index / (values.length - 1)) * chartWidth;
+        const y = padding + chartHeight - (value / maxValue) * chartHeight;
+        if (index === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+      
+      // Draw area under line
+      ctx.lineTo(padding + chartWidth, padding + chartHeight);
+      ctx.lineTo(padding, padding + chartHeight);
+      ctx.closePath();
+      ctx.fill();
+      
+      // Draw max value indicator
+      ctx.fillStyle = '#aab3c7';
+      ctx.textAlign = 'left';
+      ctx.fillText(`Max: ${maxValue}`, padding, padding - 5);
     }
+    
+    function drawBarChart(ctx, canvas, values, labels) {
+      const padding = 40;
+      const chartWidth = canvas.width - padding * 2;
+      const chartHeight = canvas.height - padding * 2;
+      const maxValue = Math.max(...values, 1);
+      const barWidth = chartWidth / values.length * 0.8;
+      
+      ctx.fillStyle = 'rgba(124, 92, 255, 0.6)';
+      
+      values.forEach((value, index) => {
+        const x = padding + (index / values.length) * chartWidth + (chartWidth / values.length - barWidth) / 2;
+        const height = (value / maxValue) * chartHeight;
+        const y = padding + chartHeight - height;
+        ctx.fillRect(x, y, barWidth, height);
+      });
+      
+      // Draw max value indicator
+      ctx.fillStyle = '#aab3c7';
+      ctx.textAlign = 'left';
+      ctx.fillText(`Max: ${maxValue}`, padding, padding - 5);
+    }
+    
+    function drawDoughnutChart(ctx, canvas, values, labels) {
+      const centerX = canvas.width / 2;
+      const centerY = canvas.height / 2;
+      const radius = Math.min(centerX, centerY) - 20;
+      const total = values.reduce((a, b) => a + b, 0);
+      
+      const colors = ['#7c5cff', '#44d3a8', '#ffb020', '#ff5d5d', '#9ca3af', '#6366f1'];
+      
+      let currentAngle = -Math.PI / 2;
+      
+      values.forEach((value, index) => {
+        const sliceAngle = (value / total) * 2 * Math.PI;
+        
+        ctx.fillStyle = colors[index % colors.length];
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, radius, currentAngle, currentAngle + sliceAngle);
+        ctx.arc(centerX, centerY, radius * 0.6, currentAngle + sliceAngle, currentAngle, true);
+        ctx.closePath();
+        ctx.fill();
+        
+        currentAngle += sliceAngle;
+      });
+      
+      // Draw center text
+      ctx.fillStyle = '#aab3c7';
+      ctx.textAlign = 'center';
+      ctx.fillText(`${values.length} items`, centerX, centerY);
+    }
+    
+    // Chart.js defaults
+    window.Chart.defaults = {
+      color: '#aab3c7',
+      backgroundColor: 'rgba(124, 92, 255, 0.1)',
+      borderColor: '#7c5cff',
+      plugins: { legend: { labels: { color: '#aab3c7' } } },
+      scales: {
+        linear: { grid: { color: 'rgba(171, 179, 199, 0.1)' }, ticks: { color: '#aab3c7' } },
+        category: { grid: { color: 'rgba(171, 179, 199, 0.1)' }, ticks: { color: '#aab3c7' } }
+      }
+    };
+    
+    console.log('[panel] Chart.js fallback ready');
   </script>
 </head>
 <body>
@@ -530,19 +654,33 @@
     function fmtDur(sec){ if(sec==null) return '—'; sec = Math.max(0, +sec|0); const h = Math.floor(sec/3600), m = Math.floor((sec%3600)/60), s = sec%60; const parts = []; if(h) parts.push(h+'h'); if(m||h) parts.push((h?String(m).padStart(2,'0'):m)+'m'); parts.push(String(s).padStart(2,'0')+'s'); return parts.join(' '); }
     function escapeHtml(s){ return (s||'').replace(/[&<>"]/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
-    // Chart.js defaults for dark theme (only if Chart.js loaded)
-    if (typeof Chart !== 'undefined') {
-      Chart.defaults.color = '#aab3c7';
-      Chart.defaults.backgroundColor = 'rgba(124, 92, 255, 0.1)';
-      Chart.defaults.borderColor = '#7c5cff';
-      Chart.defaults.plugins.legend.labels.color = '#aab3c7';
-      Chart.defaults.scales.linear.grid.color = 'rgba(171, 179, 199, 0.1)';
-      Chart.defaults.scales.linear.ticks.color = '#aab3c7';
-      Chart.defaults.scales.category.grid.color = 'rgba(171, 179, 199, 0.1)';
-      Chart.defaults.scales.category.ticks.color = '#aab3c7';
-    } else {
-      console.warn('Chart.js not available - chart functionality will be disabled');
+    // Chart.js defaults for dark theme (using our fallback implementation)
+    function initializeChartJS() {
+      if (typeof Chart !== 'undefined' && Chart.defaults) {
+        Chart.defaults.color = '#aab3c7';
+        Chart.defaults.backgroundColor = 'rgba(124, 92, 255, 0.1)';
+        Chart.defaults.borderColor = '#7c5cff';
+        if (Chart.defaults.plugins && Chart.defaults.plugins.legend) {
+          Chart.defaults.plugins.legend.labels.color = '#aab3c7';
+        }
+        if (Chart.defaults.scales) {
+          if (Chart.defaults.scales.linear) {
+            Chart.defaults.scales.linear.grid.color = 'rgba(171, 179, 199, 0.1)';
+            Chart.defaults.scales.linear.ticks.color = '#aab3c7';
+          }
+          if (Chart.defaults.scales.category) {
+            Chart.defaults.scales.category.grid.color = 'rgba(171, 179, 199, 0.1)';
+            Chart.defaults.scales.category.ticks.color = '#aab3c7';
+          }
+        }
+        console.log('[panel] Chart.js defaults configured');
+      } else {
+        console.log('[panel] Using Chart.js fallback implementation');
+      }
     }
+    
+    // Initialize Chart.js immediately since we provide our own implementation
+    initializeChartJS();
 
     // Chart instances
     let playerTrendChart = null;
@@ -692,30 +830,28 @@
 
     // Update player trend chart (small version for dashboard)
     function updatePlayerTrendChart(data) {
-      if (typeof Chart === 'undefined') {
-        $('#playerTrendChart').parentElement.innerHTML = '<div class="empty">Chart.js not available - charts disabled</div>';
-        return;
-      }
-      
       const ctx = $('#playerTrendChart').getContext('2d');
       
       if (playerTrendChart) {
         playerTrendChart.destroy();
       }
       
+      // Prepare data for our fallback chart implementation
+      const chartData = {
+        labels: data.map(d => new Date(d.date).toLocaleDateString()),
+        datasets: [{
+          label: 'Unique Players',
+          data: data.map(d => d.unique_players || 0),
+          borderColor: '#7c5cff',
+          backgroundColor: 'rgba(124, 92, 255, 0.1)',
+          tension: 0.4,
+          fill: true
+        }]
+      };
+      
       playerTrendChart = new Chart(ctx, {
         type: 'line',
-        data: {
-          labels: data.map(d => new Date(d.date).toLocaleDateString()),
-          datasets: [{
-            label: 'Unique Players',
-            data: data.map(d => d.unique_players),
-            borderColor: '#7c5cff',
-            backgroundColor: 'rgba(124, 92, 255, 0.1)',
-            tension: 0.4,
-            fill: true
-          }]
-        },
+        data: chartData,
         options: {
           responsive: true,
           maintainAspectRatio: false,
@@ -1012,11 +1148,6 @@
     }
 
     function updateAnalyticsPlayerChart(data) {
-      if (typeof Chart === 'undefined') {
-        $('#analyticsPlayerChart').parentElement.innerHTML = '<div class="empty">Chart.js not available - charts disabled</div>';
-        return;
-      }
-      
       const ctx = $('#analyticsPlayerChart').getContext('2d');
       
       if (analyticsPlayerChart) {
@@ -1030,7 +1161,7 @@
           datasets: [
             {
               label: 'Unique Players',
-              data: data.map(d => d.unique_players),
+              data: data.map(d => d.unique_players || 0),
               borderColor: '#7c5cff',
               backgroundColor: 'rgba(124, 92, 255, 0.1)',
               tension: 0.4,
@@ -1038,7 +1169,7 @@
             },
             {
               label: 'Sessions',
-              data: data.map(d => d.total_sessions),
+              data: data.map(d => d.total_sessions || 0),
               borderColor: '#44d3a8',
               backgroundColor: 'rgba(68, 211, 168, 0.1)',
               tension: 0.4,
@@ -1051,32 +1182,12 @@
           maintainAspectRatio: false,
           plugins: {
             legend: { position: 'top' }
-          },
-          scales: {
-            y: {
-              type: 'linear',
-              display: true,
-              position: 'left',
-              title: { display: true, text: 'Players' }
-            },
-            y1: {
-              type: 'linear',
-              display: true,
-              position: 'right',
-              title: { display: true, text: 'Sessions' },
-              grid: { drawOnChartArea: false }
-            }
           }
         }
       });
     }
 
     function updateSessionDistChart(data) {
-      if (typeof Chart === 'undefined') {
-        $('#sessionDistChart').parentElement.innerHTML = '<div class="empty">Chart.js not available - charts disabled</div>';
-        return;
-      }
-      
       const ctx = $('#sessionDistChart').getContext('2d');
       
       if (sessionDistChart) {
@@ -1088,7 +1199,7 @@
         data: {
           labels: data.map(d => d.duration_bucket),
           datasets: [{
-            data: data.map(d => d.count),
+            data: data.map(d => d.count || 0),
             backgroundColor: [
               'rgba(124, 92, 255, 0.8)',
               'rgba(68, 211, 168, 0.8)',
@@ -1110,11 +1221,6 @@
     }
 
     function updateHourlyActivityChart(data) {
-      if (typeof Chart === 'undefined') {
-        $('#hourlyActivityChart').parentElement.innerHTML = '<div class="empty">Chart.js not available - charts disabled</div>';
-        return;
-      }
-      
       const ctx = $('#hourlyActivityChart').getContext('2d');
       
       if (hourlyActivityChart) {
@@ -1127,7 +1233,7 @@
           labels: data.map(d => d.hour + ':00'),
           datasets: [{
             label: 'Sessions',
-            data: data.map(d => d.sessions),
+            data: data.map(d => d.sessions || 0),
             backgroundColor: 'rgba(124, 92, 255, 0.6)',
             borderColor: '#7c5cff',
             borderWidth: 1
@@ -1194,11 +1300,6 @@
     }
 
     async function loadSystemHistoryChart() {
-      if (typeof Chart === 'undefined') {
-        $('#systemChart').parentElement.innerHTML = '<div class="empty">Chart.js not available - charts disabled</div>';
-        return;
-      }
-      
       try {
         const history = await jget('/api/system/history?hours=24');
         
@@ -1215,7 +1316,7 @@
             datasets: [
               {
                 label: 'CPU %',
-                data: history.map(h => h.cpu_usage),
+                data: history.map(h => h.cpu_usage || 0),
                 borderColor: '#7c5cff',
                 backgroundColor: 'rgba(124, 92, 255, 0.1)',
                 yAxisID: 'y',
@@ -1223,7 +1324,7 @@
               },
               {
                 label: 'Memory %',
-                data: history.map(h => h.memory_usage),
+                data: history.map(h => h.memory_usage || 0),
                 borderColor: '#44d3a8',
                 backgroundColor: 'rgba(68, 211, 168, 0.1)',
                 yAxisID: 'y',
@@ -1231,7 +1332,7 @@
               },
               {
                 label: 'Disk %',
-                data: history.map(h => h.disk_usage),
+                data: history.map(h => h.disk_usage || 0),
                 borderColor: '#ffb020',
                 backgroundColor: 'rgba(255, 176, 32, 0.1)',
                 yAxisID: 'y',
@@ -1257,6 +1358,12 @@
         
       } catch (e) {
         console.warn('Failed to load system history chart:', e);
+        // Show fallback message in the chart container
+        const ctx = $('#systemChart').getContext('2d');
+        ctx.fillStyle = '#aab3c7';
+        ctx.font = '14px system-ui';
+        ctx.textAlign = 'center';
+        ctx.fillText('System history unavailable', ctx.canvas.width / 2, ctx.canvas.height / 2);
       }
     }
 

@@ -325,11 +325,10 @@ class Analytics {
     }
   }
 
-  // Get current server statistics
+  // Get current server statistics (using in-memory data for online status)
   async getCurrentStats() {
     try {
       const totalPlayers = await get('SELECT COUNT(*) as count FROM players');
-      const onlinePlayers = await get('SELECT COUNT(*) as count FROM players WHERE online = 1');
       const totalSessions = await get('SELECT COUNT(*) as count FROM sessions');
       const totalPlaytime = await get('SELECT COALESCE(SUM(total_playtime), 0) as total FROM players');
       const avgSessionLength = await get('SELECT COALESCE(AVG(duration), 0) as avg FROM sessions WHERE duration IS NOT NULL');
@@ -340,7 +339,7 @@ class Analytics {
 
       return {
         total_players: totalPlayers.count || 0,
-        online_players: onlinePlayers.count || 0,
+        online_players: 0, // Will be updated by server with real-time data
         total_sessions: totalSessions.count || 0,
         total_playtime_hours: Math.round((totalPlaytime.total / 3600) * 100) / 100,
         avg_session_minutes: Math.round((avgSessionLength.avg / 60) * 100) / 100,
