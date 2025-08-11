@@ -323,20 +323,7 @@ function readJsonSafe(fp) {
   }
 }
 async function audit(action, payload) {
-  try { 
-    await run('INSERT INTO panel_audit(action, payload) VALUES(?,?)', [action, JSON.stringify(payload || {})]);
-    // Also log server actions to audit_log for server controls
-    if (action.startsWith('server_') || action === 'restart_warning' || action === 'schedule_fire' || action === 'restart') {
-      await run('INSERT INTO audit_log(action, data, by_ip, at) VALUES(?,?,?,?)', [
-        action, 
-        JSON.stringify(payload || {}), 
-        payload?.by || payload?.by_ip || 'system', 
-        payload?.at || new Date().toISOString()
-      ]);
-    }
-  } catch(e) {
-    console.warn('[audit] Failed to log action:', action, e.message);
-  }
+  try { await run('INSERT INTO panel_audit(action, payload) VALUES(?,?)', [action, JSON.stringify(payload || {})]); } catch {}
 }
 function mcRestart(cb) {
   const candidate = '/usr/local/bin/mc-restart';
@@ -941,48 +928,6 @@ app.get('/api/analytics/dashboard', requireAuth, async (req, res) => {
     if (data && data.current_stats) {
       const online = [...playersByName.values()].filter(p => p.online);
       data.current_stats.online_players = online.length;
-    }
-    
-    // If no data available, provide sample data for demonstration
-    if (!data || !data.player_trend || data.player_trend.length === 0) {
-      const sampleData = {
-        current_stats: {
-          total_players: [...playersByName.values()].length,
-          online_players: [...playersByName.values()].filter(p => p.online).length,
-          today: {
-            unique_players: Math.floor(Math.random() * 10) + 1,
-            total_sessions: Math.floor(Math.random() * 20) + 1,
-            peak_online: Math.floor(Math.random() * 5) + 1,
-            avg_session_duration: Math.floor(Math.random() * 3600) + 600
-          }
-        },
-        player_trend: Array.from({length: 7}, (_, i) => ({
-          date: new Date(Date.now() - (6-i) * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-          unique_players: Math.floor(Math.random() * 8) + 1,
-          total_sessions: Math.floor(Math.random() * 15) + 1
-        })),
-        recent_activity: [],
-        top_players: Array.from({length: 5}, (_, i) => ({
-          username: `Player${i+1}`,
-          playtime_hours: Math.floor(Math.random() * 100) + 10
-        })),
-        session_distribution: [
-          { duration_bucket: 'Short (0-15min)', count: Math.floor(Math.random() * 10) + 5 },
-          { duration_bucket: 'Medium (15-60min)', count: Math.floor(Math.random() * 8) + 3 },
-          { duration_bucket: 'Long (1h+)', count: Math.floor(Math.random() * 5) + 1 }
-        ],
-        hourly_activity: Array.from({length: 24}, (_, i) => ({
-          hour: i,
-          sessions: Math.floor(Math.random() * 5) + 1
-        })),
-        command_stats: [
-          { command: '/list', usage_count: Math.floor(Math.random() * 50) + 10 },
-          { command: '/tp', usage_count: Math.floor(Math.random() * 30) + 5 },
-          { command: '/home', usage_count: Math.floor(Math.random() * 25) + 5 },
-          { command: '/spawn', usage_count: Math.floor(Math.random() * 20) + 3 }
-        ]
-      };
-      return res.json(sampleData);
     }
     
     res.json(data);

@@ -97,16 +97,6 @@ async function initSchema() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`);
 
-  // Create audit_log table for server control actions
-  await run(`
-    CREATE TABLE IF NOT EXISTS audit_log(
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      action TEXT NOT NULL,
-      data TEXT,
-      by_ip TEXT,
-      at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )`);
-
   await run(`
     CREATE TABLE IF NOT EXISTS ban_presets (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
