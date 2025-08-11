@@ -626,6 +626,13 @@ app.get('/api/system/history', requireAuth, async (req, res) => {
 app.get('/api/analytics/dashboard', requireAuth, async (req, res) => {
   try {
     const data = await analytics.getDashboardData();
+    
+    // Update with real-time online player count
+    if (data && data.current_stats) {
+      const online = [...playersByName.values()].filter(p => p.online);
+      data.current_stats.online_players = online.length;
+    }
+    
     res.json(data);
   } catch (e) {
     res.status(500).json({ error: 'Failed to get dashboard analytics' });
