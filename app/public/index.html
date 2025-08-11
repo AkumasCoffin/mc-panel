@@ -303,7 +303,17 @@
       <div id="tab-status" class="cards">
         <section class="card third">
           <h3>Server Status</h3>
-          <div id="statusBox" class="empty">Checking…</div>
+          <div id="statusBox" class="grid cols-2">
+            <div class="metric-box">
+              <div class="metric-value" id="serverStatusText">—</div>
+              <div class="metric-label">Server Status</div>
+            </div>
+            <div class="metric-box">
+              <div class="metric-value" id="serverRconStatus">—</div>
+              <div class="metric-label">RCON Status</div>
+            </div>
+          </div>
+          <div style="margin-top:10px; font-size:12px; color:var(--muted)" id="serverStatusDetail">Live log tracking enabled.</div>
         </section>
 
         <section class="card third">
@@ -525,20 +535,20 @@
           <div id="fileMonitorStats"></div>
         </section>
 
-        <section class="card">
+        <section class="card half">
           <h3>CPU & Memory History 
             <button class="btn ghost" style="font-size:12px; padding:2px 6px; margin-left:8px;" onclick="showChartInfo('cpu-memory')">ℹ️</button>
           </h3>
-          <div class="chart-container" style="height:250px">
+          <div class="chart-container" style="height:300px">
             <canvas id="performanceCPUChart"></canvas>
           </div>
         </section>
 
-        <section class="card">
+        <section class="card half">
           <h3>Network & TPS History 
             <button class="btn ghost" style="font-size:12px; padding:2px 6px; margin-left:8px;" onclick="showChartInfo('network-tps')">ℹ️</button>
           </h3>
-          <div class="chart-container" style="height:250px">
+          <div class="chart-container" style="height:300px">
             <canvas id="performanceNetworkChart"></canvas>
           </div>
         </section>
@@ -547,7 +557,7 @@
           <h3>System Performance (24h)
             <button class="btn ghost" style="font-size:12px; padding:2px 6px; margin-left:8px;" onclick="showChartInfo('system-24h')">ℹ️</button>
           </h3>
-          <div class="chart-container" style="height:250px">
+          <div class="chart-container" style="height:350px">
             <canvas id="systemChart"></canvas>
           </div>
         </section>
@@ -979,9 +989,10 @@
     // Status with enhanced dashboard data
     async function loadStatus(){
       try{
-        const [status, dashboardData] = await Promise.all([
+        const [status, dashboardData, serverStatus] = await Promise.all([
           jget('/api/status'),
-          jget('/api/analytics/dashboard').catch(() => null)
+          jget('/api/analytics/dashboard').catch(() => null),
+          jget('/api/server/status').catch(() => null)
         ]);
         
         $('#statusChip').innerHTML = 'Status: <span class="tag">online</span>' + (status.rcon? ' <span class="tag">RCON</span>' : ' <span class="tag">no RCON</span>');
@@ -989,7 +1000,24 @@
         $('#nextRestart').textContent = status.next_restart_iso ? fmtDate(status.next_restart_iso) : '—';
         $('#nextRestart2').textContent = $('#nextRestart').textContent;
         $('#nextRestartIn').textContent = status.next_restart_seconds!=null ? (Math.floor(status.next_restart_seconds/60)+' min') : '—';
-        $('#statusBox').innerHTML = `<div class="row"><div><span class="tag">Panel OK</span></div><div><span class="tag">Auth: Session</span></div></div><div class="small muted" style="margin-top:8px">Live log tracking enabled.</div>`;
+        
+        // Update enhanced server status card
+        if (serverStatus) {
+          const systemStatus = serverStatus.system_status || 'unknown';
+          const statusClass = systemStatus === 'active' ? 'status-online' : 
+                             systemStatus === 'inactive' ? 'status-offline' : 'status-unknown';
+          $('#serverStatusText').innerHTML = `<span class="status-indicator ${statusClass}"></span>${systemStatus}`;
+          
+          const rconStatus = serverStatus.rcon_available ? 'Available' : 'Unavailable';
+          const rconClass = serverStatus.rcon_available ? 'status-online' : 'status-offline';
+          $('#serverRconStatus').innerHTML = `<span class="status-indicator ${rconClass}"></span>${rconStatus}`;
+          
+          $('#serverStatusDetail').textContent = `${serverStatus.online_players || 0} players online • Live monitoring active`;
+        } else {
+          $('#serverStatusText').innerHTML = '<span class="status-indicator status-unknown"></span>Unknown';
+          $('#serverRconStatus').innerHTML = '<span class="status-indicator status-offline"></span>' + (status.rcon ? 'Available' : 'Unavailable');
+          $('#serverStatusDetail').textContent = 'Live log tracking enabled.';
+        }
         
         // Update quick stats if available
         if (dashboardData && dashboardData.current_stats) {
@@ -1014,7 +1042,9 @@
         }
       }catch(e){
         $('#statusChip').innerHTML = 'Status: <span class="tag">error</span>';
-        $('#statusBox').innerHTML = '<div class="empty">Could not load /api/status</div>';
+        $('#serverStatusText').innerHTML = '<span class="status-indicator status-unknown"></span>Error';
+        $('#serverRconStatus').innerHTML = '<span class="status-indicator status-offline"></span>Error';
+        $('#serverStatusDetail').textContent = 'Could not load server status.';
       }
     }
 
@@ -1478,6 +1508,10 @@
         }
       } catch (e) {
         console.error('Failed to update server status:', e);
+        $('#serverSystemStatus').innerHTML = '<span class="status-indicator status-unknown"></span>Error';
+        $('#serverOnlinePlayers').textContent = '—';
+        $('#serverRconStatus').innerHTML = '<span class="status-indicator status-offline"></span>Error';
+        $('#serverLastAction').textContent = '—';
       }
     }
     
