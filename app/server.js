@@ -335,14 +335,89 @@ function mcRestart(cb) {
 
 // ---------- Schedules ----------
 const jobs = new Map(); // id -> cron task
-function unschedule(id) { const j = jobs.get(id); if (j) { try{j.stop();}catch{} jobs.delete(id); } }
+const warningJobs = new Map(); // id -> timeout IDs for warnings
+
+function unschedule(id) { 
+  const j = jobs.get(id); 
+  if (j) { 
+    try { j.stop(); } catch {} 
+    jobs.delete(id); 
+  }
+  
+  // Clear any pending warning timeouts
+  const warnings = warningJobs.get(id);
+  if (warnings) {
+    warnings.forEach(timeoutId => clearTimeout(timeoutId));
+    warningJobs.delete(id);
+  }
+}
+
+async function sendRestartWarning(message, scheduleId, scheduleLabel) {
+  try {
+    // Always log the warning attempt
+    await audit('restart_warning', { 
+      schedule_id: scheduleId, 
+      schedule_label: scheduleLabel,
+      message, 
+      at: new Date().toISOString() 
+    });
+    
+    if (rconEnabled()) {
+      await sendRconCommand(`broadcast ${message}`);
+    } else {
+      console.log(`[RESTART WARNING] ${message} (RCON disabled)`);
+    }
+  } catch (e) {
+    console.error('Failed to send restart warning:', e.message);
+  }
+}
+
+async function scheduleRestartWithWarnings(scheduleId, scheduleLabel) {
+  // Send warnings at 5min, 1min, 30sec, 5sec before restart
+  const warnings = [
+    { seconds: 300, message: 'Server restart in 5 minutes' },
+    { seconds: 60, message: 'Server restart in 1 minute' }, 
+    { seconds: 30, message: 'Server restart in 30 seconds' },
+    { seconds: 5, message: 'Server restart in 5 seconds' }
+  ];
+  
+  const timeoutIds = [];
+  
+  // Schedule each warning
+  warnings.forEach(({ seconds, message }) => {
+    const timeoutId = setTimeout(async () => {
+      await sendRestartWarning(message, scheduleId, scheduleLabel);
+    }, (300 - seconds) * 1000); // 300 seconds = 5 minutes total lead time
+    timeoutIds.push(timeoutId);
+  });
+  
+  // Schedule the actual restart after all warnings
+  const restartTimeoutId = setTimeout(async () => {
+    await audit('schedule_fire', { 
+      id: scheduleId, 
+      label: scheduleLabel, 
+      fired_at: new Date().toISOString() 
+    });
+    console.log(`[RESTART] Executing restart for schedule ${scheduleId} (${scheduleLabel})`);
+    mcRestart((err) => audit('restart', { 
+      source: 'schedule', 
+      id: scheduleId, 
+      ok: !err 
+    }).catch(()=>{}));
+  }, 300 * 1000); // 5 minutes
+  
+  timeoutIds.push(restartTimeoutId);
+  warningJobs.set(scheduleId, timeoutIds);
+}
+
 async function scheduleRow(row) {
   if (!row.enabled) return;
   if (!cron.validate(row.cron)) return;
+  
   const task = cron.schedule(row.cron, async () => {
-    await audit('schedule_fire', { id: row.id, cron: row.cron, label: row.label, fired_at: new Date().toISOString() });
-    mcRestart((err) => audit('restart', { source: 'schedule', id: row.id, ok: !err }).catch(()=>{}));
+    await scheduleRestartWithWarnings(row.id, row.label);
   });
+  
   jobs.set(row.id, task);
 }
 async function refreshSchedulesFromDb() {
@@ -729,7 +804,7 @@ app.get('/health', (req, res) => res.json({ ok: true }));
 // System monitoring endpoints
 app.get('/api/system/metrics', requireAuth, async (req, res) => {
   try {
-    const metrics = systemMonitor.getMetrics();
+    const metrics = await systemMonitor.collectMetrics();
     res.json(metrics);
   } catch (e) {
     res.status(500).json({ error: 'Failed to get system metrics' });
@@ -760,9 +835,22 @@ app.get('/api/performance/live', requireAuth, async (req, res) => {
     try {
       if (rconEnabled()) {
         const tpsResult = await sendRconCommand('forge tps');
-        if (tpsResult && tpsResult.response) {
+        if (tpsResult) {
           // Parse TPS from forge response (format varies)
-          const tpsMatch = tpsResult.response.match(/(\d+\.?\d*)\s*TPS/i);
+          // Try multiple TPS command formats for different servers
+          let tpsMatch = tpsResult.match(/(\d+\.?\d*)\s*TPS/i);
+          if (!tpsMatch) {
+            // Try Minecraft vanilla /tps command format
+            tpsMatch = tpsResult.match(/TPS:\s*(\d+\.?\d*)/i);
+          }
+          if (!tpsMatch) {
+            // Try Paper/Spigot format
+            tpsMatch = tpsResult.match(/Overall:\s*(\d+\.?\d*)/i);
+          }
+          if (!tpsMatch) {
+            // Try general number extraction for TPS
+            tpsMatch = tpsResult.match(/(\d+\.\d+)/);
+          }
           if (tpsMatch) {
             tps = parseFloat(tpsMatch[1]);
           }
