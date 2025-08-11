@@ -91,11 +91,11 @@ public class PerformanceDataCollector {
         JsonObject ticks = new JsonObject();
         
         // Average tick time over last 100 ticks
-        double[] tickTimes = server.tickTimes;
-        if (tickTimes != null && tickTimes.length > 0) {
+        long[] tickTimesLong = server.tickTimes;
+        if (tickTimesLong != null && tickTimesLong.length > 0) {
             double totalTickTime = 0;
             int validTicks = 0;
-            for (double tickTime : tickTimes) {
+            for (long tickTime : tickTimesLong) {
                 if (tickTime > 0) {
                     totalTickTime += tickTime;
                     validTicks++;

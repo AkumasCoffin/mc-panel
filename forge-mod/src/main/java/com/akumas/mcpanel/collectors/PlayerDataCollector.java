@@ -12,6 +12,8 @@ import net.minecraft.stats.Stat;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.core.Holder;
+import net.minecraft.advancements.Advancement;
+import net.minecraft.advancements.AdvancementProgress;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonArray;
@@ -54,7 +56,10 @@ public class PlayerDataCollector {
             // Get biome information
             try {
                 Holder<Biome> biomeHolder = player.level().getBiome(pos);
-                location.addProperty("biome", biomeHolder.unwrapKey().orElse(new ResourceLocation("unknown")).toString());
+                String biomeName = biomeHolder.unwrapKey()
+                    .map(key -> key.location().toString())
+                    .orElse("unknown");
+                location.addProperty("biome", biomeName);
             } catch (Exception e) {
                 location.addProperty("biome", "unknown");
             }
@@ -79,7 +84,7 @@ public class PlayerDataCollector {
             status.addProperty("last_action_time", lastActionTime);
             
             // Connection info
-            status.addProperty("ping", player.connection.latency());
+            status.addProperty("ping", player.connection.latency);
             status.addProperty("ip_address", player.connection.getRemoteAddress().toString());
             
             playerInfo.add("status", status);
@@ -170,8 +175,20 @@ public class PlayerDataCollector {
             }
             playerInfo.add("statistics", statistics);
             
-            // Advancements count
-            int advancementCount = player.getAdvancements().save().size();
+            // Advancements count - count completed advancements
+            int advancementCount = 0;
+            try {
+                // Get all advancements and count completed ones
+                for (Advancement advancement : player.getServer().getAdvancements().getAllAdvancements()) {
+                    AdvancementProgress progress = player.getAdvancements().getOrStartProgress(advancement);
+                    if (progress.isDone()) {
+                        advancementCount++;
+                    }
+                }
+            } catch (Exception e) {
+                // Fallback: just set to 0 if we can't get advancement count
+                advancementCount = 0;
+            }
             playerInfo.addProperty("advancement_count", advancementCount);
             
             playersArray.add(playerInfo);
