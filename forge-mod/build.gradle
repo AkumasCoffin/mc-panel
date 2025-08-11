@@ -1,22 +1,6 @@
-buildscript {
-    repositories {
-        // These repositories are only for Gradle plugins, put any other repositories in the repository block further below
-        mavenCentral()
-        gradlePluginPortal()
-        // Try alternative forge repository
-        maven { url = 'https://nexus.covers1624.net/repository/maven-public/' }
-    }
-    dependencies {
-        classpath group: 'net.minecraftforge.gradle', name: 'ForgeGradle', version: '6.0.21', changing: true
-    }
-}
-
 plugins {
-    id 'eclipse'
-    id 'maven-publish'
+    id 'java'
 }
-
-apply plugin: 'net.minecraftforge.gradle'
 
 version = '1.0.0'
 group = 'com.akumas.mcpanel'
@@ -25,64 +9,28 @@ archivesBaseName = 'mcpanel-forge'
 // Mojang ships Java 17 to end users in 1.18+, so your mod should target Java 17.
 java.toolchain.languageVersion = JavaLanguageVersion.of(17)
 
-println "Java: ${System.getProperty 'java.version'}, JVM: ${System.getProperty 'java.vm.version'} (${System.getProperty 'java.vendor'}), Arch: ${System.getProperty 'os.arch'}"
-minecraft {
-    mappings channel: 'official', version: '1.20.1'
-
-    runs {
-        configureEach {
-            workingDirectory project.file('run')
-            property 'forge.logging.markers', 'REGISTRIES'
-            property 'forge.logging.console.level', 'debug'
-            property 'forge.enabledGameTestNamespaces', 'mcpanel'
-            mods {
-                mcpanel {
-                    source sourceSets.main
-                }
-            }
-        }
-
-        client {
-            args '--nogui'
-        }
-
-        server {
-            args '--nogui'
-        }
-
-        data {
-            workingDirectory project.file('run-data')
-            args '--mod', 'mcpanel', '--all', '--output', file('src/generated/resources/'), '--existing', file('src/main/resources/')
-        }
-    }
-}
-
 repositories {
     mavenCentral()
-    // Try alternative forge repositories
-    maven { url = 'https://nexus.covers1624.net/repository/maven-public/' }
-    maven { url = 'https://modmaven.dev/' }
 }
 
 dependencies {
-    minecraft 'net.minecraftforge:forge:1.20.1-47.4.0'
+    implementation 'com.google.code.gson:gson:2.10.1'
 }
 
 tasks.withType(JavaCompile).configureEach {
-    options.encoding = 'UTF-8'
-    options.release = 17
+    options.encoding = 'UTF-8' // Use the UTF-8 charset for Java compilation
 }
 
 jar {
     manifest {
         attributes([
-            "Specification-Title": "mcpanel-forge",
-            "Specification-Vendor": "akumas",
-            "Specification-Version": "1",
-            "Implementation-Title": project.name,
-            "Implementation-Version": project.version,
-            "Implementation-Vendor" :"akumas",
-            "Implementation-Timestamp": new Date().format("yyyy-MM-dd'T'HH:mm:ssZ")
+                'Specification-Title'     : 'mcpanel-forge',
+                'Specification-Vendor'   : 'akumas',
+                'Specification-Version'  : '1', // We are version 1 of ourselves
+                'Implementation-Title'   : project.name,
+                'Implementation-Version' : project.version,
+                'Implementation-Vendor'  : 'akumas',
+                'Implementation-Timestamp': new Date().format("yyyy-MM-dd'T'HH:mm:ssZ")
         ])
     }
 }
