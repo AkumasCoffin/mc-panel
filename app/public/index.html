@@ -82,7 +82,8 @@
     .status-indicator.warning{background:#ffb020}
     .status-indicator.critical{background:#ff5d5d}
   </style>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.min.js" 
+          onerror="console.warn('Chart.js CDN failed to load - charts will be disabled')"></script>
 </head>
 <body>
   <div class="app">
@@ -476,15 +477,19 @@
     function fmtDur(sec){ if(sec==null) return '—'; sec = Math.max(0, +sec|0); const h = Math.floor(sec/3600), m = Math.floor((sec%3600)/60), s = sec%60; const parts = []; if(h) parts.push(h+'h'); if(m||h) parts.push((h?String(m).padStart(2,'0'):m)+'m'); parts.push(String(s).padStart(2,'0')+'s'); return parts.join(' '); }
     function escapeHtml(s){ return (s||'').replace(/[&<>"]/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
-    // Chart.js defaults for dark theme
-    Chart.defaults.color = '#aab3c7';
-    Chart.defaults.backgroundColor = 'rgba(124, 92, 255, 0.1)';
-    Chart.defaults.borderColor = '#7c5cff';
-    Chart.defaults.plugins.legend.labels.color = '#aab3c7';
-    Chart.defaults.scales.linear.grid.color = 'rgba(171, 179, 199, 0.1)';
-    Chart.defaults.scales.linear.ticks.color = '#aab3c7';
-    Chart.defaults.scales.category.grid.color = 'rgba(171, 179, 199, 0.1)';
-    Chart.defaults.scales.category.ticks.color = '#aab3c7';
+    // Chart.js defaults for dark theme (only if Chart.js loaded)
+    if (typeof Chart !== 'undefined') {
+      Chart.defaults.color = '#aab3c7';
+      Chart.defaults.backgroundColor = 'rgba(124, 92, 255, 0.1)';
+      Chart.defaults.borderColor = '#7c5cff';
+      Chart.defaults.plugins.legend.labels.color = '#aab3c7';
+      Chart.defaults.scales.linear.grid.color = 'rgba(171, 179, 199, 0.1)';
+      Chart.defaults.scales.linear.ticks.color = '#aab3c7';
+      Chart.defaults.scales.category.grid.color = 'rgba(171, 179, 199, 0.1)';
+      Chart.defaults.scales.category.ticks.color = '#aab3c7';
+    } else {
+      console.warn('Chart.js not available - chart functionality will be disabled');
+    }
 
     // Chart instances
     let playerTrendChart = null;
@@ -603,6 +608,11 @@
 
     // Update player trend chart (small version for dashboard)
     function updatePlayerTrendChart(data) {
+      if (typeof Chart === 'undefined') {
+        $('#playerTrendChart').parentElement.innerHTML = '<div class="empty">Chart.js not available - charts disabled</div>';
+        return;
+      }
+      
       const ctx = $('#playerTrendChart').getContext('2d');
       
       if (playerTrendChart) {
@@ -872,6 +882,11 @@
     }
 
     function updateAnalyticsPlayerChart(data) {
+      if (typeof Chart === 'undefined') {
+        $('#analyticsPlayerChart').parentElement.innerHTML = '<div class="empty">Chart.js not available - charts disabled</div>';
+        return;
+      }
+      
       const ctx = $('#analyticsPlayerChart').getContext('2d');
       
       if (analyticsPlayerChart) {
@@ -927,6 +942,11 @@
     }
 
     function updateSessionDistChart(data) {
+      if (typeof Chart === 'undefined') {
+        $('#sessionDistChart').parentElement.innerHTML = '<div class="empty">Chart.js not available - charts disabled</div>';
+        return;
+      }
+      
       const ctx = $('#sessionDistChart').getContext('2d');
       
       if (sessionDistChart) {
@@ -960,6 +980,11 @@
     }
 
     function updateHourlyActivityChart(data) {
+      if (typeof Chart === 'undefined') {
+        $('#hourlyActivityChart').parentElement.innerHTML = '<div class="empty">Chart.js not available - charts disabled</div>';
+        return;
+      }
+      
       const ctx = $('#hourlyActivityChart').getContext('2d');
       
       if (hourlyActivityChart) {
@@ -1039,6 +1064,11 @@
     }
 
     async function loadSystemHistoryChart() {
+      if (typeof Chart === 'undefined') {
+        $('#systemChart').parentElement.innerHTML = '<div class="empty">Chart.js not available - charts disabled</div>';
+        return;
+      }
+      
       try {
         const history = await jget('/api/system/history?hours=24');
         
