@@ -5,7 +5,7 @@ buildscript {
         mavenCentral()
     }
     dependencies {
-        classpath group: 'net.minecraftforge.gradle', name: 'ForgeGradle', version: '5.1.53', changing: true
+        classpath group: 'net.minecraftforge.gradle', name: 'ForgeGradle', version: '6.0.21', changing: true
     }
 }
 
@@ -44,7 +44,7 @@ minecraft {
     // When true, this property will have all Eclipse launch configurations run the folder 'eclipse' by default.
     // When false, it will run the folder 'run' by default.
     // In most cases you should not touch this property.
-    eclipseRunDir = 'run'
+    // eclipseRunDir = 'run'
 
     // The user_dev workspace (used by the userdev plugin) is where the run configurations are.
     // In most cases you should not touch this property.
@@ -105,7 +105,7 @@ dependencies {
     // Specify the version of Minecraft to use.
     // Any artifact can be supplied so long as it has a "userdev" classifier artifact and is a compatible parchment version.
     // The userdev artifact is a special name and will get all sorts of transformations applied to it.
-    minecraft 'net.minecraftforge:forge:1.20.1-47.2.0'
+    minecraft 'net.minecraftforge:forge:1.20.1-47.4.0'
 
     // Real mod deobf dependency examples - these get remapped to your current mappings
     // compileOnly fg.deobf("mezz.jei:jei-${mc_version}:${jei_version}:api") // Adds JEI API as a compile dependency
