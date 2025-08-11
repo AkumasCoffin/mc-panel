@@ -1,0 +1,31 @@
+modLoader="javafml"
+loaderVersion="[47,)"
+license="MIT"
+issueTrackerURL="https://github.com/AkumasCoffin/mc-panel/issues"
+
+[[mods]]
+modId="mcpanel"
+version="1.0.0"
+displayName="MC Panel Data Collector"
+logoFile="logo.png"
+credits="Created for MC Panel web interface"
+authors="AkumasCoffin"
+displayURL="https://github.com/AkumasCoffin/mc-panel"
+description='''
+Server-side data collection mod for MC Panel web interface.
+Collects comprehensive server metrics, player data, world state, and performance information.
+'''
+
+[[dependencies.mcpanel]]
+modId="forge"
+mandatory=true
+versionRange="[47.2.0,)"
+ordering="NONE"
+side="SERVER"
+
+[[dependencies.mcpanel]]
+modId="minecraft"
+mandatory=true
+versionRange="[1.20.1,)"
+ordering="NONE"
+side="SERVER"
