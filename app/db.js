@@ -213,6 +213,15 @@ async function initSchema() {
       avg_session_duration REAL DEFAULT 0
     )`);
   await run(`CREATE UNIQUE INDEX IF NOT EXISTS ux_player_analytics_date ON player_analytics(date)`);
+
+  // Online player count tracking for performance history
+  await run(`
+    CREATE TABLE IF NOT EXISTS metrics_online (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      online_count INTEGER DEFAULT 0,
+      at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`);
+  await run(`CREATE INDEX IF NOT EXISTS ix_metrics_online_time ON metrics_online(at)`);
 }
 
 module.exports = { db, run, get, all, initSchema };

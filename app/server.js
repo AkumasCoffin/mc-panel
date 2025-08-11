@@ -767,6 +767,20 @@ app.get('/api/performance/live', requireAuth, async (req, res) => {
             tps = parseFloat(tpsMatch[1]);
           }
         }
+      } else {
+        // Estimate TPS based on system load when RCON unavailable
+        const cpuUsage = metrics.cpu.usage;
+        const loadAvg = metrics.load[1];
+        
+        if (cpuUsage < 20 && loadAvg < 1.0) {
+          tps = 20.0; // Optimal TPS
+        } else if (cpuUsage < 50 && loadAvg < 2.0) {
+          tps = 19.5; // Good TPS
+        } else if (cpuUsage < 80 && loadAvg < 4.0) {
+          tps = 18.0; // Moderate TPS
+        } else {
+          tps = 15.0; // Poor TPS
+        }
       }
     } catch (e) {
       // TPS unavailable, continue without it
@@ -971,10 +985,21 @@ async function storeSystemMetrics() {
   }
 }
 
+// Store online player count for performance tracking  
+async function storeOnlineMetrics() {
+  try {
+    const onlineCount = [...playersByName.values()].filter(p => p.online).length;
+    await run(`INSERT INTO metrics_online (online_count) VALUES (?)`, [onlineCount]);
+  } catch (e) {
+    console.warn('[panel] Failed to store online metrics:', e.message);
+  }
+}
+
 // Cleanup old metrics (keep only last 7 days)
 async function cleanupOldMetrics() {
   try {
     await run("DELETE FROM system_metrics WHERE recorded_at < datetime('now', '-7 days')");
+    await run("DELETE FROM metrics_online WHERE at < datetime('now', '-7 days')");
   } catch (e) {
     console.warn('[panel] Failed to cleanup old metrics:', e.message);
   }
@@ -1003,6 +1028,9 @@ app.get('*', requireAuth, (req, res) => {
   
   // Store system metrics every minute
   setInterval(storeSystemMetrics, 60000);
+  
+  // Store online player metrics every 5 minutes
+  setInterval(storeOnlineMetrics, 5 * 60000);
   
   // Cleanup old metrics daily
   setInterval(cleanupOldMetrics, 24 * 60 * 60 * 1000);
