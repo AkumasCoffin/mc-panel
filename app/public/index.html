@@ -306,10 +306,41 @@
     function toast(msg='Saved.') { const el = $('#toast'); el.textContent = msg; el.classList.add('show'); setTimeout(()=>el.classList.remove('show'), 2200); }
     function fmtDate(s){ if(!s) return '—'; const d = new Date(s); if (isNaN(d)) return s; return d.toLocaleString(); }
     function fmtDur(sec){ if(sec==null) return '—'; sec = Math.max(0, +sec|0); const h = Math.floor(sec/3600), m = Math.floor((sec%3600)/60), s = sec%60; const parts = []; if(h) parts.push(h+'h'); if(m||h) parts.push((h?String(m).padStart(2,'0'):m)+'m'); parts.push(String(s).padStart(2,'0')+'s'); return parts.join(' '); }
-    async function jget(url){ const r = await fetch(url); if(!r.ok) throw new Error(await r.text()); return r.json(); }
-    async function jpost(url,data){ const r = await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data||{})}); if(!r.ok) throw new Error(await r.text()); return r.json(); }
-    async function jdel(url){ const r = await fetch(url,{method:'DELETE'}); if(!r.ok) throw new Error(await r.text()); return r.json(); }
     function escapeHtml(s){ return (s||'').replace(/[&<>"]/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+    // Authentication handling
+    let authString = 'YWRtaW46Y2hhbmdlbWU='; // Default: admin:changeme in base64
+    
+    function getAuthHeaders() {
+      return {
+        'Authorization': 'Basic ' + authString,
+        'Content-Type': 'application/json'
+      };
+    }
+    
+    // Simple fetch functions with authentication
+    async function jget(url){ 
+      const r = await fetch(url, { headers: getAuthHeaders() }); 
+      if(!r.ok) throw new Error(await r.text()); 
+      return r.json(); 
+    }
+    async function jpost(url,data){ 
+      const r = await fetch(url,{
+        method:'POST',
+        headers: getAuthHeaders(),
+        body:JSON.stringify(data||{})
+      }); 
+      if(!r.ok) throw new Error(await r.text()); 
+      return r.json(); 
+    }
+    async function jdel(url){ 
+      const r = await fetch(url,{
+        method:'DELETE',
+        headers: getAuthHeaders()
+      }); 
+      if(!r.ok) throw new Error(await r.text()); 
+      return r.json(); 
+    }
 
     // Tabs
     const tabBtns = $$('.nav button');
@@ -444,4 +475,103 @@
       const tbody = $('#schedTable tbody'); tbody.innerHTML = '<tr><td colspan="5" class="small">Loading…</td></tr>';
       try{
         const rows = await jget('/api/schedules');
-        tbody.innerHTML = rows.map(r=>`<tr><td>${r.id}</td><td>${r.label|
+        tbody.innerHTML = rows.map(r=>`<tr><td>${r.id}</td><td>${r.label||'—'}</td><td class="small"><code>${r.cron}</code></td><td><button class="btn ghost" onclick="toggleSchedule(${r.id})">${r.enabled?'✓ Enabled':'Disabled'}</button></td><td><button class="btn danger ghost" onclick="deleteSchedule(${r.id})">Delete</button></td></tr>`).join('') || '<tr><td colspan="5" class="small">No schedules</td></tr>';
+      }catch{ tbody.innerHTML = '<tr><td colspan="5" class="small">Failed to load schedules</td></tr>'; }
+    }
+    async function toggleSchedule(id){
+      try{ await jpost('/api/schedules/'+id+'/toggle'); loadSchedules(); toast('Schedule toggled'); }catch(e){ toast('Failed: '+e.message); }
+    }
+    async function deleteSchedule(id){
+      if(!confirm('Delete this schedule?')) return;
+      try{ await jdel('/api/schedules/'+id); loadSchedules(); toast('Schedule deleted'); }catch(e){ toast('Failed: '+e.message); }
+    }
+    $('#addSchedule').addEventListener('click', async ()=>{
+      const cron = $('#cronExpr').value.trim(), label = $('#cronLabel').value.trim();
+      if(!cron) return toast('Cron expression required');
+      try{ await jpost('/api/schedules', {cron, label:label||null}); $('#cronExpr').value = ''; $('#cronLabel').value = ''; loadSchedules(); toast('Schedule added'); }catch(e){ toast('Failed: '+e.message); }
+    });
+
+    // Presets
+    async function loadPresets(){
+      try{
+        const [bc, ban] = await Promise.all([jget('/api/broadcast-presets'), jget('/api/ban-presets')]);
+        
+        // Broadcast presets table
+        const bcRows = bc.map(r=>`<tr><td>${r.id}</td><td>${r.label||'—'}</td><td class="small">${escapeHtml(r.message||'')}</td><td><button class="btn danger ghost" onclick="deleteBcPreset(${r.id})">Delete</button></td></tr>`).join('');
+        $('#bcTable tbody').innerHTML = bcRows || '<tr><td colspan="4" class="small">No presets</td></tr>';
+        
+        // Broadcast presets dropdown
+        $('#bcSelect').innerHTML = '<option value="">Select preset…</option>' + bc.map(r=>`<option value="${r.id}">${r.label||('ID: '+r.id)}</option>`).join('');
+        
+        // Ban presets table
+        const banRows = ban.map(r=>`<tr><td>${r.id}</td><td>${r.label||'—'}</td><td class="small">${escapeHtml(r.reason||'')}</td><td><button class="btn danger ghost" onclick="deleteBanPreset(${r.id})">Delete</button></td></tr>`).join('');
+        $('#banTable tbody').innerHTML = banRows || '<tr><td colspan="4" class="small">No presets</td></tr>';
+        
+        // Ban presets dropdown
+        $('#banSelect').innerHTML = '<option value="">Select reason…</option>' + ban.map(r=>`<option value="${r.id}">${r.label||('ID: '+r.id)}</option>`).join('');
+      }catch(e){ console.error('Failed to load presets:', e); }
+    }
+    
+    async function deleteBcPreset(id){
+      if(!confirm('Delete this broadcast preset?')) return;
+      try{ await jdel('/api/broadcast-presets/'+id); loadPresets(); toast('Preset deleted'); }catch(e){ toast('Failed: '+e.message); }
+    }
+    async function deleteBanPreset(id){
+      if(!confirm('Delete this ban preset?')) return;
+      try{ await jdel('/api/ban-presets/'+id); loadPresets(); toast('Preset deleted'); }catch(e){ toast('Failed: '+e.message); }
+    }
+    
+    $('#bcAdd').addEventListener('click', async ()=>{
+      const label = $('#bcLabel').value.trim(), message = $('#bcMessage').value.trim();
+      if(!message) return toast('Message required');
+      try{ await jpost('/api/broadcast-presets', {label:label||null, message}); $('#bcLabel').value = ''; $('#bcMessage').value = ''; loadPresets(); toast('Preset saved'); }catch(e){ toast('Failed: '+e.message); }
+    });
+    
+    $('#banAdd').addEventListener('click', async ()=>{
+      const label = $('#banLabel').value.trim(), reason = $('#banReason').value.trim();
+      if(!reason) return toast('Reason required');
+      try{ await jpost('/api/ban-presets', {label:label||null, reason}); $('#banLabel').value = ''; $('#banReason').value = ''; loadPresets(); toast('Preset saved'); }catch(e){ toast('Failed: '+e.message); }
+    });
+    
+    $('#bcSend').addEventListener('click', async ()=>{
+      const presetId = $('#bcSelect').value;
+      if(!presetId) return toast('Please select a preset');
+      try{ const result = await jpost('/api/broadcast', {presetId: Number(presetId)}); toast('Broadcast sent'); $('#cmdOut').textContent = result.out || 'Sent successfully'; }catch(e){ toast('Failed: '+e.message); }
+    });
+    
+    $('#banSend').addEventListener('click', async ()=>{
+      const username = $('#banUser').value.trim(), presetId = $('#banSelect').value;
+      if(!username) return toast('Username required');
+      if(!presetId) return toast('Please select a reason');
+      if(!confirm(`Ban user "${username}"?`)) return;
+      try{ const result = await jpost('/api/ban', {username, presetId: Number(presetId)}); toast('Ban executed'); $('#cmdOut').textContent = result.out || 'Ban executed successfully'; $('#banUser').value = ''; }catch(e){ toast('Failed: '+e.message); }
+    });
+
+    // Audit
+    async function loadAudit(){
+      const tbody = $('#auditTable tbody'); tbody.innerHTML = '<tr><td colspan="3" class="small">Loading…</td></tr>';
+      try{
+        const rows = await jget('/api/audit');
+        tbody.innerHTML = rows.map(r=>`<tr><td class="small">${fmtDate(r.created_at)}</td><td class="small"><code>${r.action}</code></td><td class="small">${escapeHtml(JSON.stringify(r.payload||{}))}</td></tr>`).join('') || '<tr><td colspan="3" class="small">No audit events</td></tr>';
+      }catch{ tbody.innerHTML = '<tr><td colspan="3" class="small">Failed to load audit</td></tr>'; }
+    }
+
+    // Global refresh
+    $('#refreshBtn').addEventListener('click', ()=>{
+      loadStatus(); loadOnline();
+      const active = $('.nav button.active').dataset.tab;
+      if(active==='players') loadPlayers();
+      if(active==='bans') loadBans();
+      if(active==='schedules') loadSchedules();
+      if(active==='presets') loadPresets();
+      if(active==='audit') loadAudit();
+    });
+
+    // Initial load with automatic refresh
+    setTimeout(() => {
+      loadStatus(); loadOnline(true);
+      setInterval(()=>{ loadStatus(); loadOnline(true); }, 30000); // Refresh every 30s
+    }, 1000);
+  </script>
+</body>
+</html>
