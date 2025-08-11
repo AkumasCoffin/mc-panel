@@ -563,6 +563,134 @@ app.post('/api/kick', requireAuth, validateStringInput('username', 50), validate
   }
 });
 
+// Server control endpoints
+app.post('/api/server/start', requireAuth, async (req, res) => {
+  const { broadcastMessage } = req.body || {};
+  
+  try {
+    // Send broadcast message before starting if provided
+    if (broadcastMessage && rconEnabled()) {
+      try {
+        await sendRconCommand(`broadcast ${broadcastMessage}`);
+      } catch (e) {
+        // Continue even if broadcast fails
+      }
+    }
+    
+    // Use systemctl to start the server
+    const { execSync } = require('child_process');
+    execSync(`sudo systemctl start ${MC_SERVICE_NAME}`, { timeout: 10000 });
+    
+    await audit('server_start', { 
+      broadcast: broadcastMessage || null, 
+      by: req.ip, 
+      at: new Date().toISOString() 
+    });
+    
+    res.json({ ok: true, message: 'Server start command sent' });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: 'Failed to start server: ' + e.message });
+  }
+});
+
+app.post('/api/server/stop', requireAuth, async (req, res) => {
+  const { broadcastMessage } = req.body || {};
+  
+  try {
+    // Send broadcast message before stopping if provided
+    if (broadcastMessage && rconEnabled()) {
+      try {
+        await sendRconCommand(`broadcast ${broadcastMessage}`);
+        // Wait a bit for players to see the message
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      } catch (e) {
+        // Continue even if broadcast fails
+      }
+    }
+    
+    // Use systemctl to stop the server
+    const { execSync } = require('child_process');
+    execSync(`sudo systemctl stop ${MC_SERVICE_NAME}`, { timeout: 10000 });
+    
+    await audit('server_stop', { 
+      broadcast: broadcastMessage || null, 
+      by: req.ip, 
+      at: new Date().toISOString() 
+    });
+    
+    res.json({ ok: true, message: 'Server stop command sent' });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: 'Failed to stop server: ' + e.message });
+  }
+});
+
+app.post('/api/server/restart', requireAuth, async (req, res) => {
+  const { broadcastMessage } = req.body || {};
+  
+  try {
+    // Send broadcast message before restarting if provided
+    if (broadcastMessage && rconEnabled()) {
+      try {
+        await sendRconCommand(`broadcast ${broadcastMessage}`);
+        // Wait a bit for players to see the message
+        await new Promise(resolve => setTimeout(resolve, 3000));
+      } catch (e) {
+        // Continue even if broadcast fails
+      }
+    }
+    
+    // Use systemctl to restart the server
+    const { execSync } = require('child_process');
+    execSync(`sudo systemctl restart ${MC_SERVICE_NAME}`, { timeout: 15000 });
+    
+    await audit('server_restart', { 
+      broadcast: broadcastMessage || null, 
+      by: req.ip, 
+      at: new Date().toISOString() 
+    });
+    
+    res.json({ ok: true, message: 'Server restart command sent' });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: 'Failed to restart server: ' + e.message });
+  }
+});
+
+app.get('/api/server/status', requireAuth, async (req, res) => {
+  try {
+    const { execSync } = require('child_process');
+    
+    // Get systemctl status
+    let systemStatus = 'unknown';
+    try {
+      const statusOutput = execSync(`systemctl is-active ${MC_SERVICE_NAME}`, { 
+        encoding: 'utf8', 
+        timeout: 5000 
+      }).trim();
+      systemStatus = statusOutput;
+    } catch (e) {
+      systemStatus = 'inactive';
+    }
+    
+    // Get recent server actions from audit log
+    const recentActions = await all(`
+      SELECT action, data, by_ip, at 
+      FROM audit_log 
+      WHERE action IN ('server_start', 'server_stop', 'server_restart')
+      ORDER BY at DESC 
+      LIMIT 10
+    `);
+    
+    res.json({
+      system_status: systemStatus,
+      online_players: [...playersByName.values()].filter(p => p.online).length,
+      rcon_available: rconEnabled(),
+      recent_actions: recentActions
+    });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to get server status: ' + e.message });
+  }
+});
+
 // Schedules CRUD
 app.get('/api/schedules', requireAuth, async (req, res) => {
   const rows = await all('SELECT * FROM schedules ORDER BY id DESC'); res.json(rows);
@@ -619,6 +747,73 @@ app.get('/api/system/history', requireAuth, async (req, res) => {
     res.json(metrics);
   } catch (e) {
     res.status(500).json({ error: 'Failed to get system history' });
+  }
+});
+
+// Performance monitoring endpoints
+app.get('/api/performance/live', requireAuth, async (req, res) => {
+  try {
+    const metrics = await systemMonitor.collectMetrics();
+    
+    // Try to get Minecraft TPS if available
+    let tps = null;
+    try {
+      if (rconEnabled()) {
+        const tpsResult = await sendRconCommand('forge tps');
+        if (tpsResult && tpsResult.response) {
+          // Parse TPS from forge response (format varies)
+          const tpsMatch = tpsResult.response.match(/(\d+\.?\d*)\s*TPS/i);
+          if (tpsMatch) {
+            tps = parseFloat(tpsMatch[1]);
+          }
+        }
+      }
+    } catch (e) {
+      // TPS unavailable, continue without it
+    }
+    
+    res.json({
+      ...metrics,
+      tps: tps,
+      server_status: playersByName.size > 0 ? 'online' : 'unknown'
+    });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to get live performance data' });
+  }
+});
+
+app.get('/api/performance/history', requireAuth, async (req, res) => {
+  try {
+    const period = req.query.period || '1h';
+    let hours;
+    
+    switch (period) {
+      case '1h': hours = 1; break;
+      case '1d': hours = 24; break;
+      case '7d': hours = 168; break;
+      default: hours = 1; break;
+    }
+    
+    const metrics = await all(`
+      SELECT * FROM system_metrics 
+      WHERE recorded_at >= datetime('now', '-${hours} hours')
+      ORDER BY recorded_at ASC
+    `);
+    
+    // Also get online player history
+    const onlineHistory = await all(`
+      SELECT online_count, at as recorded_at FROM metrics_online 
+      WHERE at >= datetime('now', '-${hours} hours')
+      ORDER BY at ASC
+    `);
+    
+    res.json({
+      system_metrics: metrics,
+      online_history: onlineHistory,
+      period: period
+    });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to get performance history' });
   }
 });
 

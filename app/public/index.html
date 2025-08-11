@@ -49,7 +49,15 @@
     .grid.cols-2{grid-template-columns: repeat(2, 1fr)}
     .grid.cols-3{grid-template-columns: repeat(3, 1fr)}
     .grid.cols-4{grid-template-columns: repeat(4, 1fr)}
-    @media (max-width: 900px){ .grid.cols-2,.grid.cols-3,.grid.cols-4{grid-template-columns:1fr}}
+    @media (max-width: 900px){ 
+      .grid.cols-2,.grid.cols-3,.grid.cols-4{grid-template-columns:1fr}
+      .app{grid-template-columns:1fr; grid-template-rows:auto 1fr}
+      .side{height:auto; position:static; flex-direction:row; overflow-x:auto; gap:8px; padding:12px}
+      .nav{flex-direction:row; gap:8px; white-space:nowrap}
+      .nav button{min-width:120px; justify-content:center}
+      .main{padding:16px}
+      .card.half,.card.third,.card.two{grid-column:span 12}
+    }
     table{width:100%; border-collapse:collapse}
     th,td{padding:8px 10px; border-bottom:1px dashed #23283a; text-align:left}
     th{color:#aab3c7; font-weight:600; background:#121624; position:sticky; top:0}
@@ -78,6 +86,28 @@
     .metric-value{font-size:24px; font-weight:bold; color:var(--brand)}
     .metric-label{font-size:12px; color:var(--muted); margin-top:4px}
     .status-indicator{display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px}
+    
+    /* Light theme support */
+    body.light-theme {
+      --bg: #f8f9fa; --panel: #ffffff; --muted: #6c757d; --text: #212529;
+      --border: #dee2e6; --chip: #e9ecef;
+      background: linear-gradient(180deg, #f8f9fa, #ffffff);
+    }
+    body.light-theme .side { background: rgba(255, 255, 255, 0.95); }
+    body.light-theme .metric-box { background: linear-gradient(135deg, #ffffff, #f8f9fa); }
+    body.light-theme .chart-container canvas { background: rgba(248, 249, 250, 0.5); }
+    body.light-theme th { background: #f8f9fa; }
+    body.light-theme .empty { background: #f8f9fa; border-color: #dee2e6; }
+    
+    /* Improved visual hierarchy */
+    .section-header { margin: 20px 0 10px 0; font-size: 18px; font-weight: 600; color: var(--brand); }
+    .action-group { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+    .action-group .btn { flex: 1; min-width: 120px; }
+    
+    /* Status indicators */
+    .status-online { background: #22c55e; }
+    .status-offline { background: #ef4444; }
+    .status-unknown { background: #6b7280; }
     .status-indicator.good{background:#44d3a8}
     .status-indicator.warning{background:#ffb020}
     .status-indicator.critical{background:#ff5d5d}
@@ -244,14 +274,16 @@
       </div>
       <div class="nav">
         <button data-tab="status" class="active"><svg viewBox="0 0 24 24"><path d="M3 12h6v9H3zM9 3h6v18H9zM15 8h6v13h-6z" fill="currentColor"/></svg>Dashboard</button>
+        <button data-tab="performance"><svg viewBox="0 0 24 24"><path d="M12 2L2 7v10c0 5.55 3.84 9.74 9 11 5.16-1.26 9-5.45 9-11V7l-10-5z" stroke="currentColor" fill="none" stroke-width="1.5"/></svg>Performance</button>
         <button data-tab="analytics"><svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1010 10A10.011 10.011 0 0012 2zm5 10a5 5 0 01-8.536 3.536L15.536 8.464A4.982 4.982 0 0117 12zm-10 0a5 5 0 018.536-3.536L8.464 15.536A4.982 4.982 0 017 12z" fill="currentColor"/></svg>Analytics</button>
         <button data-tab="monitoring"><svg viewBox="0 0 24 24"><path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m0 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" stroke="currentColor" fill="none" stroke-width="1.5"/></svg>System Monitor</button>
+        <button data-tab="server-controls"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="currentColor"/></svg>Server Controls</button>
         <button data-tab="online"><svg viewBox="0 0 24 24"><path d="M12 12a5 5 0 100-10 5 5 0 000 10zm-9 9a9 9 0 1118 0H3z" fill="currentColor"/></svg>Online <span class="right tag" id="onlineCount">0</span></button>
         <button data-tab="players"><svg viewBox="0 0 24 24"><path d="M16 13a4 4 0 10-8 0 7 7 0 00-7 7h22a7 7 0 00-7-7z" fill="currentColor"/></svg>Players</button>
         <button data-tab="bans"><svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1010 10A10.011 10.011 0 0012 2zm5 10a5 5 0 01-8.536 3.536L15.536 8.464A4.982 4.982 0 0117 12zm-10 0a5 5 0 018.536-3.536L8.464 15.536A4.982 4.982 0 017 12z" fill="currentColor"/></svg>Bans</button>
         <button data-tab="moderation"><svg viewBox="0 0 24 24"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" stroke="currentColor" fill="none" stroke-width="1.5"/></svg>Moderation</button>
         <button data-tab="schedules"><svg viewBox="0 0 24 24"><path d="M7 2v3M17 2v3M3 9h18M5 5h14a2 2 0 012 2v13H3V7a2 2 0 012-2z" stroke="currentColor" fill="none" stroke-width="1.3"/></svg>Scheduled Restarts</button>
-        <button data-tab="presets"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h10M4 17h7" stroke="currentColor" fill="none" stroke-width="1.4"/></svg>Presets</button>
+        <button data-tab="settings"><svg viewBox="0 0 24 24"><path d="M12 15a3 3 0 100-6 3 3 0 000 6z" stroke="currentColor" fill="none"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z" stroke="currentColor" fill="none" stroke-width="1.5"/></svg>Settings</button>
         <button data-tab="audit"><svg viewBox="0 0 24 24"><path d="M4 4h16v16H4zM8 8h8M8 12h8M8 16h5" stroke="currentColor" fill="none" stroke-width="1.3"/></svg>Audit / Commands</button>
       </div>
       <div class="foot small">
@@ -377,21 +409,108 @@
 
         <section class="card half">
           <h3>Session Length Distribution</h3>
-          <div class="chart-container">
+          <div class="chart-container" style="height:200px">
             <canvas id="sessionDistChart"></canvas>
           </div>
         </section>
 
+        <section class="card half">
+          <h3>Daily Player Counts (Last 7 Days)</h3>
+          <div class="chart-container" style="height:200px">
+            <canvas id="dailyPlayerChart"></canvas>
+          </div>
+        </section>
+
         <section class="card">
-          <h3>Hourly Activity Pattern</h3>
+          <h3>Hourly Activity Heatmap (Last 7 Days)</h3>
           <div class="chart-container" style="height:250px">
             <canvas id="hourlyActivityChart"></canvas>
           </div>
         </section>
 
+        <section class="card half">
+          <h3>Top Commands Usage</h3>
+          <div class="chart-container" style="height:250px">
+            <canvas id="commandChart"></canvas>
+          </div>
+        </section>
+
+        <section class="card half">
+          <h3>Command Usage Stats</h3>
+          <div id="commandStats" style="max-height:250px; overflow-y:auto"></div>
+        </section>
+      </div>
+
+      <!-- PERFORMANCE -->
+      <div id="tab-performance" class="cards" hidden>
+        <section class="card third">
+          <h3>Real-time Metrics</h3>
+          <div id="liveMetrics" class="grid cols-2">
+            <div class="metric-box">
+              <div class="metric-value" id="liveCPU">—</div>
+              <div class="metric-label">CPU Usage %</div>
+            </div>
+            <div class="metric-box">
+              <div class="metric-value" id="liveRAM">—</div>
+              <div class="metric-label">RAM Usage %</div>
+            </div>
+            <div class="metric-box">
+              <div class="metric-value" id="liveDisk">—</div>
+              <div class="metric-label">Disk Usage %</div>
+            </div>
+            <div class="metric-box">
+              <div class="metric-value" id="liveTPS">—</div>
+              <div class="metric-label">Server TPS</div>
+            </div>
+          </div>
+        </section>
+
+        <section class="card third">
+          <h3>Network Traffic</h3>
+          <div id="networkMetrics" class="grid cols-2">
+            <div class="metric-box">
+              <div class="metric-value" id="networkRx">—</div>
+              <div class="metric-label">RX Rate (KB/s)</div>
+            </div>
+            <div class="metric-box">
+              <div class="metric-value" id="networkTx">—</div>
+              <div class="metric-label">TX Rate (KB/s)</div>
+            </div>
+            <div class="metric-box">
+              <div class="metric-value" id="systemUptime">—</div>
+              <div class="metric-label">Uptime</div>
+            </div>
+            <div class="metric-box">
+              <div class="metric-value" id="systemLoad">—</div>
+              <div class="metric-label">Load Average</div>
+            </div>
+          </div>
+        </section>
+
+        <section class="card third">
+          <h3>Historical Data</h3>
+          <div class="row">
+            <select id="perfPeriod">
+              <option value="1h">Last Hour</option>
+              <option value="1d" selected>Last Day</option>
+              <option value="7d">Last Week</option>
+            </select>
+            <button class="btn" id="perfRefresh">Refresh</button>
+          </div>
+        </section>
+
         <section class="card">
-          <h3>Command Usage</h3>
-          <div id="commandStats" style="max-height:300px; overflow-y:auto"></div>
+          <h3>CPU & Memory History</h3>
+          <div class="chart-container" style="height:250px">
+            <canvas id="performanceCPUChart"></canvas>
+          </div>
+        </section>
+
+        <section class="card">
+          <h3>Network & TPS History</h3>
+          <div class="chart-container" style="height:250px">
+            <canvas id="performanceNetworkChart"></canvas>
+          </div>
         </section>
       </div>
 
@@ -461,6 +580,68 @@
         <section class="card two">
           <h3>File Monitoring</h3>
           <div id="fileMonitorStats"></div>
+        </section>
+      </div>
+
+      <!-- SERVER CONTROLS -->
+      <div id="tab-server-controls" class="cards" hidden>
+        <section class="card half">
+          <h3>Server Status</h3>
+          <div id="serverStatusInfo" class="grid cols-2">
+            <div class="metric-box">
+              <div class="metric-value" id="serverSystemStatus">—</div>
+              <div class="metric-label">System Status</div>
+            </div>
+            <div class="metric-box">
+              <div class="metric-value" id="serverOnlinePlayers">—</div>
+              <div class="metric-label">Online Players</div>
+            </div>
+            <div class="metric-box">
+              <div class="metric-value" id="serverRconStatus">—</div>
+              <div class="metric-label">RCON Status</div>
+            </div>
+            <div class="metric-box">
+              <div class="metric-value" id="serverLastAction">—</div>
+              <div class="metric-label">Last Action</div>
+            </div>
+          </div>
+        </section>
+
+        <section class="card half">
+          <h3>Server Controls</h3>
+          <div class="row">
+            <button class="btn brand" id="startServerBtn">
+              <svg viewBox="0 0 24 24" style="width:16px;height:16px;margin-right:6px"><path d="M8 5v14l11-7z" fill="currentColor"/></svg>
+              Start Server
+            </button>
+            <button class="btn warn" id="restartServerBtn">
+              <svg viewBox="0 0 24 24" style="width:16px;height:16px;margin-right:6px"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" stroke="currentColor" fill="none" stroke-width="2"/></svg>
+              Restart Server
+            </button>
+            <button class="btn danger" id="stopServerBtn">
+              <svg viewBox="0 0 24 24" style="width:16px;height:16px;margin-right:6px"><path d="M6 6h12v12H6z" fill="currentColor"/></svg>
+              Stop Server
+            </button>
+          </div>
+          
+          <div style="margin-top:15px">
+            <label for="serverBroadcastMsg">Broadcast message before action (optional):</label>
+            <textarea id="serverBroadcastMsg" placeholder="Server will restart in 5 minutes for maintenance..." rows="2"></textarea>
+          </div>
+          
+          <div class="row" style="margin-top:10px">
+            <select id="serverBroadcastPreset">
+              <option value="">Or select preset message...</option>
+            </select>
+            <button class="btn ghost" id="usePresetMsg">Use Preset</button>
+          </div>
+        </section>
+
+        <section class="card">
+          <h3>Recent Server Actions</h3>
+          <div id="serverActionHistory" style="max-height:300px; overflow-y:auto">
+            <div class="empty">Loading...</div>
+          </div>
         </section>
       </div>
 
@@ -545,42 +726,63 @@
       </div>
 
       <!-- PRESETS -->
-      <div id="tab-presets" class="cards" hidden>
-        <section class="card third">
+      <!-- SETTINGS -->
+      <div id="tab-settings" class="cards" hidden>
+        <section class="card">
           <h3>Broadcast Presets</h3>
           <div class="row">
             <input id="bcLabel" type="text" placeholder="Label (optional)" />
             <input id="bcMessage" type="text" placeholder="Message" />
-            <button class="btn brand" id="bcAdd">Save</button>
+            <button class="btn brand" id="bcAdd">Save Preset</button>
           </div>
-          <div style="overflow:auto; max-height:50vh">
-            <table id="bcTable"><thead><tr><th>ID</th><th>Label</th><th>Message</th><th></th></tr></thead><tbody></tbody></table>
-          </div>
-          <div class="row" style="margin-top:10px">
-            <select id="bcSelect"><option value="">Select preset…</option></select>
-            <button class="btn" id="bcSend">Send Broadcast</button>
+          <div style="overflow:auto; max-height:40vh; margin-top:10px">
+            <table id="bcTable"><thead><tr><th>ID</th><th>Label</th><th>Message</th><th>Actions</th></tr></thead><tbody></tbody></table>
           </div>
         </section>
-        <section class="card third">
+
+        <section class="card half">
           <h3>Ban Presets</h3>
           <div class="row">
             <input id="banLabel" type="text" placeholder="Label (optional)" />
             <input id="banReason" type="text" placeholder="Reason" />
-            <button class="btn brand" id="banAdd">Save</button>
+            <button class="btn brand" id="banAdd">Save Preset</button>
           </div>
-          <div style="overflow:auto; max-height:50vh">
-            <table id="banTable"><thead><tr><th>ID</th><th>Label</th><th>Reason</th><th></th></tr></thead><tbody></tbody></table>
+          <div style="overflow:auto; max-height:40vh; margin-top:10px">
+            <table id="banTable"><thead><tr><th>ID</th><th>Label</th><th>Reason</th><th>Actions</th></tr></thead><tbody></tbody></table>
           </div>
         </section>
-        <section class="card third">
+
+        <section class="card half">
           <h3>Kick Presets</h3>
           <div class="row">
             <input id="kickLabel" type="text" placeholder="Label (optional)" />
             <input id="kickReason" type="text" placeholder="Reason" />
-            <button class="btn brand" id="kickAdd">Save</button>
+            <button class="btn brand" id="kickAdd">Save Preset</button>
           </div>
-          <div style="overflow:auto; max-height:50vh">
-            <table id="kickTable"><thead><tr><th>ID</th><th>Label</th><th>Reason</th><th></th></tr></thead><tbody></tbody></table>
+          <div style="overflow:auto; max-height:40vh; margin-top:10px">
+            <table id="kickTable"><thead><tr><th>ID</th><th>Label</th><th>Reason</th><th>Actions</th></tr></thead><tbody></tbody></table>
+          </div>
+        </section>
+
+        <section class="card">
+          <h3>Panel Configuration</h3>
+          <div class="grid cols-2">
+            <div>
+              <label>Theme</label>
+              <select id="themeSelect">
+                <option value="dark">Dark</option>
+                <option value="light">Light</option>
+              </select>
+            </div>
+            <div>
+              <label>Auto-refresh interval</label>
+              <select id="refreshInterval">
+                <option value="5000">5 seconds</option>
+                <option value="10000" selected>10 seconds</option>
+                <option value="30000">30 seconds</option>
+                <option value="60000">1 minute</option>
+              </select>
+            </div>
           </div>
         </section>
       </div>
@@ -642,7 +844,7 @@
 
   <script>
     // Defensive: ensure only Dashboard is visible at boot, in case of cachey CSS
-    ['online','players','bans','moderation','schedules','presets','audit','analytics','monitoring']
+    ['online','players','bans','moderation','schedules','settings','audit','analytics','monitoring','performance','server-controls']
       .forEach(t => { const el = document.getElementById('tab-'+t); if (el) el.hidden = true; });
     document.getElementById('tab-status').hidden = false;
 
@@ -688,6 +890,8 @@
     let sessionDistChart = null;
     let hourlyActivityChart = null;
     let systemChart = null;
+    let commandChart = null;
+    let dailyPlayerChart = null;
 
     // Authentication handling - session-based (no more hardcoded auth headers)
     
@@ -759,7 +963,7 @@
           tabBtns.forEach(b=>b.classList.remove('active'));
           btn.classList.add('active');
           const t = btn.dataset.tab;
-          $$('#tab-status,#tab-online,#tab-players,#tab-bans,#tab-moderation,#tab-schedules,#tab-presets,#tab-audit,#tab-analytics,#tab-monitoring').forEach(x=>x.hidden = true);
+          $$('#tab-status,#tab-online,#tab-players,#tab-bans,#tab-moderation,#tab-schedules,#tab-settings,#tab-audit,#tab-analytics,#tab-monitoring,#tab-performance,#tab-server-controls').forEach(x=>x.hidden = true);
           const targetTab = $('#tab-'+t);
           if (targetTab) {
             targetTab.hidden = false;
@@ -773,10 +977,12 @@
           if (t==='bans'){ loadBans(); }
           if (t==='moderation'){ loadModeration(); }
           if (t==='schedules'){ loadSchedules(); }
-          if (t==='presets'){ loadPresets(); }
+          if (t==='settings'){ loadSettings(); }
           if (t==='audit'){ loadAudit(); }
           if (t==='analytics'){ loadAnalytics(); }
           if (t==='monitoring'){ loadSystemMonitoring(); }
+          if (t==='performance'){ loadPerformance(); }
+          if (t==='server-controls'){ loadServerControls(); }
         };
         
         btn.addEventListener('click', btn._tabClickHandler);
@@ -1011,7 +1217,7 @@
     }
 
     // Presets
-    async function loadPresets(){
+    async function loadSettings(){
       try{
         const [bc, ban, kick] = await Promise.all([
           jget('/api/broadcast-presets'), 
@@ -1023,9 +1229,6 @@
         const bcRows = bc.map(r=>`<tr><td>${r.id}</td><td>${r.label||'—'}</td><td class="small">${escapeHtml(r.message||'')}</td><td><button class="btn danger ghost" onclick="deleteBcPreset(${r.id})">Delete</button></td></tr>`).join('');
         $('#bcTable tbody').innerHTML = bcRows || '<tr><td colspan="4" class="small">No presets</td></tr>';
         
-        // Broadcast presets dropdown
-        $('#bcSelect').innerHTML = '<option value="">Select preset…</option>' + bc.map(r=>`<option value="${r.id}">${r.label||('ID: '+r.id)}</option>`).join('');
-        
         // Ban presets table
         const banRows = ban.map(r=>`<tr><td>${r.id}</td><td>${r.label||'—'}</td><td class="small">${escapeHtml(r.reason||'')}</td><td><button class="btn danger ghost" onclick="deleteBanPreset(${r.id})">Delete</button></td></tr>`).join('');
         $('#banTable tbody').innerHTML = banRows || '<tr><td colspan="4" class="small">No presets</td></tr>';
@@ -1033,45 +1236,194 @@
         // Kick presets table
         const kickRows = kick.map(r=>`<tr><td>${r.id}</td><td>${r.label||'—'}</td><td class="small">${escapeHtml(r.reason||'')}</td><td><button class="btn danger ghost" onclick="deleteKickPreset(${r.id})">Delete</button></td></tr>`).join('');
         $('#kickTable tbody').innerHTML = kickRows || '<tr><td colspan="4" class="small">No presets</td></tr>';
-      }catch(e){ console.error('Failed to load presets:', e); }
+
+        // Update server controls broadcast preset dropdown
+        const serverBcSelect = $('#serverBroadcastPreset');
+        if (serverBcSelect) {
+          serverBcSelect.innerHTML = '<option value="">Or select preset message...</option>' + bc.map(r=>`<option value="${r.id}">${r.label||('ID: '+r.id)}</option>`).join('');
+        }
+      }catch(e){ console.error('Failed to load settings:', e); }
     }
     
     async function deleteBcPreset(id){
       if(!confirm('Delete this broadcast preset?')) return;
-      try{ await jdel('/api/broadcast-presets/'+id); loadPresets(); toast('Preset deleted'); }catch(e){ toast('Failed: '+e.message); }
+      try{ await jdel('/api/broadcast-presets/'+id); loadSettings(); toast('Preset deleted'); }catch(e){ toast('Failed: '+e.message); }
     }
     async function deleteBanPreset(id){
       if(!confirm('Delete this ban preset?')) return;
-      try{ await jdel('/api/ban-presets/'+id); loadPresets(); loadModeration(); toast('Preset deleted'); }catch(e){ toast('Failed: '+e.message); }
+      try{ await jdel('/api/ban-presets/'+id); loadSettings(); loadModeration(); toast('Preset deleted'); }catch(e){ toast('Failed: '+e.message); }
     }
     async function deleteKickPreset(id){
       if(!confirm('Delete this kick preset?')) return;
-      try{ await jdel('/api/kick-presets/'+id); loadPresets(); loadModeration(); toast('Preset deleted'); }catch(e){ toast('Failed: '+e.message); }
+      try{ await jdel('/api/kick-presets/'+id); loadSettings(); loadModeration(); toast('Preset deleted'); }catch(e){ toast('Failed: '+e.message); }
     }
     
     $('#bcAdd').addEventListener('click', async ()=>{
       const label = $('#bcLabel').value.trim(), message = $('#bcMessage').value.trim();
       if(!message) return toast('Message required');
-      try{ await jpost('/api/broadcast-presets', {label:label||null, message}); $('#bcLabel').value = ''; $('#bcMessage').value = ''; loadPresets(); toast('Preset saved'); }catch(e){ toast('Failed: '+e.message); }
+      try{ await jpost('/api/broadcast-presets', {label:label||null, message}); $('#bcLabel').value = ''; $('#bcMessage').value = ''; loadSettings(); toast('Preset saved'); }catch(e){ toast('Failed: '+e.message); }
     });
     
     $('#banAdd').addEventListener('click', async ()=>{
       const label = $('#banLabel').value.trim(), reason = $('#banReason').value.trim();
       if(!reason) return toast('Reason required');
-      try{ await jpost('/api/ban-presets', {label:label||null, reason}); $('#banLabel').value = ''; $('#banReason').value = ''; loadPresets(); loadModeration(); toast('Preset saved'); }catch(e){ toast('Failed: '+e.message); }
+      try{ await jpost('/api/ban-presets', {label:label||null, reason}); $('#banLabel').value = ''; $('#banReason').value = ''; loadSettings(); loadModeration(); toast('Preset saved'); }catch(e){ toast('Failed: '+e.message); }
     });
     
     $('#kickAdd').addEventListener('click', async ()=>{
       const label = $('#kickLabel').value.trim(), reason = $('#kickReason').value.trim();
       if(!reason) return toast('Reason required');
-      try{ await jpost('/api/kick-presets', {label:label||null, reason}); $('#kickLabel').value = ''; $('#kickReason').value = ''; loadPresets(); loadModeration(); toast('Preset saved'); }catch(e){ toast('Failed: '+e.message); }
+      try{ await jpost('/api/kick-presets', {label:label||null, reason}); $('#kickLabel').value = ''; $('#kickReason').value = ''; loadSettings(); loadModeration(); toast('Preset saved'); }catch(e){ toast('Failed: '+e.message); }
     });
     
-    $('#bcSend').addEventListener('click', async ()=>{
-      const presetId = $('#bcSelect').value;
-      if(!presetId) return toast('Please select a preset');
-      try{ const result = await jpost('/api/broadcast', {presetId: Number(presetId)}); toast('Broadcast sent'); $('#cmdOut').textContent = result.out || 'Sent successfully'; }catch(e){ toast('Failed: '+e.message); }
-    });
+    // Performance monitoring functions
+    async function loadPerformance() {
+      try {
+        // Load live metrics first
+        await updateLiveMetrics();
+        
+        // Load historical data
+        await updatePerformanceHistory();
+        
+        // Set up auto-refresh
+        if (window.performanceInterval) clearInterval(window.performanceInterval);
+        window.performanceInterval = setInterval(updateLiveMetrics, 5000);
+      } catch (e) {
+        console.error('Failed to load performance data:', e);
+      }
+    }
+    
+    async function updateLiveMetrics() {
+      try {
+        const data = await jget('/api/performance/live');
+        
+        $('#liveCPU').textContent = data.cpu?.usage ? data.cpu.usage + '%' : '—';
+        $('#liveRAM').textContent = data.memory?.usage ? data.memory.usage + '%' : '—';
+        $('#liveDisk').textContent = data.disk?.usage ? data.disk.usage + '%' : '—';
+        $('#liveTPS').textContent = data.tps ? data.tps.toFixed(1) : '—';
+        $('#networkRx').textContent = data.network?.rxRate ? data.network.rxRate + ' KB/s' : '—';
+        $('#networkTx').textContent = data.network?.txRate ? data.network.txRate + ' KB/s' : '—';
+        $('#systemUptime').textContent = data.uptime ? fmtDur(data.uptime) : '—';
+        $('#systemLoad').textContent = data.load?.[1] ? data.load[1].toFixed(2) : '—';
+      } catch (e) {
+        console.error('Failed to update live metrics:', e);
+      }
+    }
+    
+    async function updatePerformanceHistory() {
+      try {
+        const period = $('#perfPeriod').value || '1d';
+        const data = await jget(`/api/performance/history?period=${period}`);
+        
+        // Create CPU/Memory chart
+        if (data.system_metrics && data.system_metrics.length > 0) {
+          const cpuData = data.system_metrics.map(m => m.cpu_usage || 0);
+          const memData = data.system_metrics.map(m => m.memory_usage || 0);
+          const labels = data.system_metrics.map(m => new Date(m.recorded_at).toLocaleTimeString());
+          
+          // Update CPU chart
+          const cpuChart = new Chart($('#performanceCPUChart'), {
+            type: 'line',
+            data: {
+              labels: labels,
+              datasets: [{
+                label: 'CPU %',
+                data: cpuData,
+                borderColor: '#7c5cff',
+                backgroundColor: 'rgba(124, 92, 255, 0.1)'
+              }, {
+                label: 'Memory %',
+                data: memData,
+                borderColor: '#44d3a8',
+                backgroundColor: 'rgba(68, 211, 168, 0.1)'
+              }]
+            }
+          });
+        }
+        
+        // Create Network chart with online players
+        if (data.online_history && data.online_history.length > 0) {
+          const onlineData = data.online_history.map(m => m.online_count || 0);
+          const networkData = data.system_metrics ? data.system_metrics.map(m => (m.network_rx_rate || 0) + (m.network_tx_rate || 0)) : [];
+          const labels = data.online_history.map(m => new Date(m.recorded_at).toLocaleTimeString());
+          
+          const networkChart = new Chart($('#performanceNetworkChart'), {
+            type: 'line',
+            data: {
+              labels: labels,
+              datasets: [{
+                label: 'Online Players',
+                data: onlineData,
+                borderColor: '#ffb020',
+                backgroundColor: 'rgba(255, 176, 32, 0.1)'
+              }]
+            }
+          });
+        }
+      } catch (e) {
+        console.error('Failed to update performance history:', e);
+      }
+    }
+    
+    // Server controls functions
+    async function loadServerControls() {
+      try {
+        // Load server status
+        await updateServerStatus();
+        
+        // Load broadcast presets for server controls
+        const bc = await jget('/api/broadcast-presets');
+        $('#serverBroadcastPreset').innerHTML = '<option value="">Or select preset message...</option>' + 
+          bc.map(r=>`<option value="${r.id}">${r.label||('ID: '+r.id)}</option>`).join('');
+        
+        // Set up auto-refresh
+        if (window.serverControlsInterval) clearInterval(window.serverControlsInterval);
+        window.serverControlsInterval = setInterval(updateServerStatus, 10000);
+      } catch (e) {
+        console.error('Failed to load server controls:', e);
+      }
+    }
+    
+    async function updateServerStatus() {
+      try {
+        const data = await jget('/api/server/status');
+        
+        // Update status with indicators
+        const systemStatus = data.system_status || 'unknown';
+        const statusClass = systemStatus === 'active' ? 'status-online' : 
+                           systemStatus === 'inactive' ? 'status-offline' : 'status-unknown';
+        $('#serverSystemStatus').innerHTML = `<span class="status-indicator ${statusClass}"></span>${systemStatus}`;
+        
+        $('#serverOnlinePlayers').textContent = data.online_players || '0';
+        
+        const rconStatus = data.rcon_available ? 'Available' : 'Unavailable';
+        const rconClass = data.rcon_available ? 'status-online' : 'status-offline';
+        $('#serverRconStatus').innerHTML = `<span class="status-indicator ${rconClass}"></span>${rconStatus}`;
+        
+        $('#serverLastAction').textContent = data.recent_actions && data.recent_actions.length > 0 ? 
+          fmtDate(data.recent_actions[0].at) : '—';
+        
+        // Update action history
+        if (data.recent_actions) {
+          const historyHtml = data.recent_actions.map(action => {
+            const actionData = JSON.parse(action.data || '{}');
+            return `<div class="audit-item" style="padding:8px; border-bottom:1px solid var(--border); margin-bottom:8px">
+              <div style="display:flex; justify-content:space-between; align-items:center">
+                <div>
+                  <div class="audit-action" style="font-weight:600; color:var(--brand)">${action.action.replace('server_', '').toUpperCase()}</div>
+                  <div class="audit-ip small">by ${action.by_ip}</div>
+                </div>
+                <div class="audit-time small">${fmtDate(action.at)}</div>
+              </div>
+              ${actionData.broadcast ? `<div class="audit-extra small" style="margin-top:4px; color:var(--muted)">Message: ${escapeHtml(actionData.broadcast)}</div>` : ''}
+            </div>`;
+          }).join('');
+          $('#serverActionHistory').innerHTML = historyHtml || '<div class="empty">No recent actions</div>';
+        }
+      } catch (e) {
+        console.error('Failed to update server status:', e);
+      }
+    }
     
     // Moderation functionality
     $('#modBanSend').addEventListener('click', async ()=>{
@@ -1132,6 +1484,7 @@
         
         // Update command stats
         if (data.command_stats) {
+          // Update text list
           const commandsHtml = data.command_stats.slice(0, 10).map(cmd => 
             `<div class="small" style="display:flex; justify-content:space-between; margin-bottom:4px">
               <span><code>${escapeHtml(cmd.command)}</code></span>
@@ -1139,7 +1492,13 @@
             </div>`
           ).join('');
           $('#commandStats').innerHTML = commandsHtml || '<div class="empty">No command data</div>';
+          
+          // Update command chart
+          updateCommandChart(data.command_stats);
         }
+        
+        // Load additional analytics data
+        await loadAdditionalAnalytics();
         
       } catch (e) {
         console.error('Failed to load analytics:', e);
@@ -1250,6 +1609,93 @@
           }
         }
       });
+    }
+
+    // Command usage chart
+    function updateCommandChart(data) {
+      const ctx = $('#commandChart').getContext('2d');
+      
+      if (window.commandChart) {
+        window.commandChart.destroy();
+      }
+      
+      // Take top 10 commands
+      const topCommands = data.slice(0, 10);
+      
+      window.commandChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: topCommands.map(cmd => cmd.command),
+          datasets: [{
+            label: 'Usage Count',
+            data: topCommands.map(cmd => cmd.usage_count),
+            backgroundColor: 'rgba(68, 211, 168, 0.6)',
+            borderColor: '#44d3a8',
+            borderWidth: 1
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false }
+          },
+          scales: {
+            y: { beginAtZero: true }
+          }
+        }
+      });
+    }
+
+    // Daily player chart
+    function updateDailyPlayerChart(data) {
+      const ctx = $('#dailyPlayerChart').getContext('2d');
+      
+      if (window.dailyPlayerChart) {
+        window.dailyPlayerChart.destroy();
+      }
+      
+      window.dailyPlayerChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: data.map(d => new Date(d.date).toLocaleDateString()),
+          datasets: [{
+            label: 'Unique Players',
+            data: data.map(d => d.unique_players || 0),
+            borderColor: '#7c5cff',
+            backgroundColor: 'rgba(124, 92, 255, 0.1)',
+            fill: true,
+            tension: 0.4
+          }, {
+            label: 'Total Sessions',
+            data: data.map(d => d.total_sessions || 0),
+            borderColor: '#44d3a8',
+            backgroundColor: 'rgba(68, 211, 168, 0.1)',
+            fill: false,
+            tension: 0.4
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            y: { beginAtZero: true }
+          }
+        }
+      });
+    }
+
+    // Load additional analytics data
+    async function loadAdditionalAnalytics() {
+      try {
+        // Load daily player data for the last 7 days
+        const playerTrend = await jget('/api/analytics/player-trend?days=7');
+        if (playerTrend) {
+          updateDailyPlayerChart(playerTrend);
+        }
+      } catch (e) {
+        console.error('Failed to load additional analytics:', e);
+      }
     }
 
     // System Monitoring
@@ -1396,14 +1842,92 @@
       if(active==='bans') loadBans();
       if(active==='moderation') loadModeration();
       if(active==='schedules') loadSchedules();
-      if(active==='presets') loadPresets();
+      if(active==='settings') loadSettings();
       if(active==='audit') loadAudit();
       if(active==='analytics') loadAnalytics();
       if(active==='monitoring') loadSystemMonitoring();
+      if(active==='performance') loadPerformance();
+      if(active==='server-controls') loadServerControls();
     });
 
     // Logout button
     $('#logoutBtn').addEventListener('click', logout);
+
+    // Performance tab event listeners
+    $('#perfRefresh').addEventListener('click', updatePerformanceHistory);
+    $('#perfPeriod').addEventListener('change', updatePerformanceHistory);
+
+    // Server controls event listeners
+    $('#startServerBtn').addEventListener('click', async () => {
+      const message = $('#serverBroadcastMsg').value.trim();
+      if (!confirm('Start the server?')) return;
+      try {
+        const result = await jpost('/api/server/start', { broadcastMessage: message || null });
+        toast('Server start command sent');
+        $('#serverBroadcastMsg').value = '';
+        setTimeout(updateServerStatus, 3000); // Refresh status after delay
+      } catch (e) {
+        toast('Failed: ' + e.message);
+      }
+    });
+
+    $('#stopServerBtn').addEventListener('click', async () => {
+      const message = $('#serverBroadcastMsg').value.trim();
+      if (!confirm('Stop the server? This will disconnect all players.')) return;
+      try {
+        const result = await jpost('/api/server/stop', { broadcastMessage: message || null });
+        toast('Server stop command sent');
+        $('#serverBroadcastMsg').value = '';
+        setTimeout(updateServerStatus, 3000); // Refresh status after delay
+      } catch (e) {
+        toast('Failed: ' + e.message);
+      }
+    });
+
+    $('#restartServerBtn').addEventListener('click', async () => {
+      const message = $('#serverBroadcastMsg').value.trim();
+      if (!confirm('Restart the server? This will temporarily disconnect all players.')) return;
+      try {
+        const result = await jpost('/api/server/restart', { broadcastMessage: message || null });
+        toast('Server restart command sent');
+        $('#serverBroadcastMsg').value = '';
+        setTimeout(updateServerStatus, 5000); // Refresh status after delay
+      } catch (e) {
+        toast('Failed: ' + e.message);
+      }
+    });
+
+    $('#usePresetMsg').addEventListener('click', () => {
+      const presetId = $('#serverBroadcastPreset').value;
+      if (!presetId) return toast('Please select a preset first');
+      
+      // Find the preset message and populate the textarea
+      jget('/api/broadcast-presets').then(presets => {
+        const preset = presets.find(p => p.id == presetId);
+        if (preset) {
+          $('#serverBroadcastMsg').value = preset.message || '';
+        }
+      }).catch(e => toast('Failed to load preset'));
+    });
+
+    // Theme switcher
+    $('#themeSelect').addEventListener('change', (e) => {
+      const theme = e.target.value;
+      if (theme === 'light') {
+        document.body.classList.add('light-theme');
+        localStorage.setItem('panel-theme', 'light');
+      } else {
+        document.body.classList.remove('light-theme');
+        localStorage.setItem('panel-theme', 'dark');
+      }
+    });
+
+    // Load saved theme
+    const savedTheme = localStorage.getItem('panel-theme');
+    if (savedTheme === 'light') {
+      document.body.classList.add('light-theme');
+      $('#themeSelect').value = 'light';
+    }
 
     // Enhanced initialization with proper DOM ready handling
     function initializeApp() {
