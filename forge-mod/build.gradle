@@ -11,6 +11,10 @@ java.toolchain.languageVersion = JavaLanguageVersion.of(17)
 
 repositories {
     mavenCentral()
+    maven {
+        name = 'MinecraftForge'
+        url = 'https://maven.minecraftforge.net'
+    }
 }
 
 dependencies {
@@ -26,6 +30,9 @@ tasks.withType(JavaCompile).configureEach {
 }
 
 jar {
+    // Exclude the stub Forge classes from the JAR - these should be provided by Forge at runtime
+    exclude 'net/minecraftforge/**'
+    
     manifest {
         attributes([
                 'Specification-Title'     : 'mcpanel-forge',

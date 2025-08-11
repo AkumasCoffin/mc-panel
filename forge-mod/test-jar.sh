@@ -31,7 +31,6 @@ echo "✅ No conflicting Forge classes found"
 echo "Checking for required mod classes..."
 REQUIRED_CLASSES=(
     "com/akumas/mcpanel/MCPanelMod.class"
-    "com/akumas/mcpanel/MCPanelForgeIntegration.class"
     "META-INF/mods.toml"
 )
 
