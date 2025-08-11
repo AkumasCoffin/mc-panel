@@ -1,5 +1,6 @@
 package com.akumas.mcpanel;
 
+import net.minecraftforge.fml.common.Mod;
 import java.util.logging.Logger;
 import java.util.logging.Level;
 
@@ -9,6 +10,7 @@ import java.util.logging.Level;
  * 
  * When Forge is not available, this class is ignored and won't cause crashes.
  */
+@Mod("mcpanel")
 public class MCPanelForgeIntegration {
     private static final Logger LOGGER = Logger.getLogger(MCPanelForgeIntegration.class.getName());
     
