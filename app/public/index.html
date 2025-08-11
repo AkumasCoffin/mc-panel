@@ -82,21 +82,30 @@
     .status-indicator.warning{background:#ffb020}
     .status-indicator.critical{background:#ff5d5d}
   </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
   <script>
     // Simple fallback for Chart.js - create a mock Chart object to prevent errors
     if (typeof Chart === 'undefined') {
-      window.Chart = {
-        defaults: {
-          color: '#aab3c7',
-          backgroundColor: 'rgba(124, 92, 255, 0.1)',
-          borderColor: '#7c5cff',
-          plugins: { legend: { labels: { color: '#aab3c7' } } },
-          scales: {
-            linear: { grid: { color: 'rgba(171, 179, 199, 0.1)' }, ticks: { color: '#aab3c7' } },
-            category: { grid: { color: 'rgba(171, 179, 199, 0.1)' }, ticks: { color: '#aab3c7' } }
-          }
+      window.Chart = function(ctx, config) {
+        // Mock Chart constructor
+        this.destroy = function() {};
+        this.update = function() {};
+        this.resize = function() {};
+        return this;
+      };
+      
+      // Chart.js defaults
+      window.Chart.defaults = {
+        color: '#aab3c7',
+        backgroundColor: 'rgba(124, 92, 255, 0.1)',
+        borderColor: '#7c5cff',
+        plugins: { legend: { labels: { color: '#aab3c7' } } },
+        scales: {
+          linear: { grid: { color: 'rgba(171, 179, 199, 0.1)' }, ticks: { color: '#aab3c7' } },
+          category: { grid: { color: 'rgba(171, 179, 199, 0.1)' }, ticks: { color: '#aab3c7' } }
         }
       };
+      
       console.warn('Chart.js not available - using fallback (charts disabled)');
     }
   </script>
