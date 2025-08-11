@@ -344,9 +344,12 @@
         </section>
 
         <section class="card half">
-          <h3>Online Players</h3>
+          <h3>Live Server Data</h3>
           <div id="onlineList" class="grid cols-2"></div>
-          <div id="onlineEmpty" class="empty" style="display:none">No one online.</div>
+          <div id="onlineEmpty" class="empty" style="display:none">No live data available.</div>
+          <div class="small muted" style="margin-top:8px">
+            Data from MC Data Collector. For detailed player info, visit the <button class="btn ghost" style="font-size:12px; padding:2px 6px;" onclick="document.querySelector('[data-tab=mc-data]').click()">MC Data tab</button>
+          </div>
         </section>
 
         <section class="card half">
@@ -666,30 +669,8 @@
 
       <!-- SERVER CONTROLS -->
       <div id="tab-server-controls" class="cards" hidden>
-        <section class="card half">
-          <h3>Server Status</h3>
-          <div id="serverStatusInfo" class="grid cols-2">
-            <div class="metric-box">
-              <div class="metric-value" id="serverSystemStatus">—</div>
-              <div class="metric-label">System Status</div>
-            </div>
-            <div class="metric-box">
-              <div class="metric-value" id="serverOnlinePlayers">—</div>
-              <div class="metric-label">Online Players</div>
-            </div>
-            <div class="metric-box">
-              <div class="metric-value" id="serverRconStatus">—</div>
-              <div class="metric-label">RCON Status</div>
-            </div>
-            <div class="metric-box">
-              <div class="metric-value" id="serverLastAction">—</div>
-              <div class="metric-label">Last Action</div>
-            </div>
-          </div>
-        </section>
-
-        <section class="card half">
-          <h3>Server Controls</h3>
+        <section class="card">
+          <h3>Server Control Actions</h3>
           <div class="row">
             <button class="btn brand" id="startServerBtn">
               <svg viewBox="0 0 24 24" style="width:16px;height:16px;margin-right:6px"><path d="M8 5v14l11-7z" fill="currentColor"/></svg>
@@ -715,6 +696,10 @@
               <option value="">Or select preset message...</option>
             </select>
             <button class="btn ghost" id="usePresetMsg">Use Preset</button>
+          </div>
+          
+          <div class="small muted" style="margin-top:8px">
+            Server status and details are available on the <button class="btn ghost" style="font-size:12px; padding:2px 6px;" onclick="document.querySelector('[data-tab=status]').click()">Dashboard</button>
           </div>
         </section>
 
@@ -1090,20 +1075,68 @@
     // Status with enhanced dashboard data
     async function loadStatus(){
       try{
-        const [status, dashboardData, serverStatus] = await Promise.all([
+        const [status, dashboardData, serverStatus, mcSummary] = await Promise.all([
           jget('/api/status'),
           jget('/api/analytics/dashboard').catch(() => null),
-          jget('/api/server/status').catch(() => null)
+          jget('/api/server/status').catch(() => null),
+          jget('/api/mc-data/summary').catch(() => null)
         ]);
         
-        $('#statusChip').innerHTML = 'Status: <span class="tag">online</span>' + (status.rcon? ' <span class="tag">RCON</span>' : ' <span class="tag">no RCON</span>');
+        // Prioritize MC data for player counts if available
+        let onlineCount = 0;
+        let totalPlayers = 0;
+        
+        if (mcSummary && mcSummary.available) {
+          onlineCount = mcSummary.players?.online || 0;
+          totalPlayers = mcSummary.players?.max || 0;
+          
+          // Update dashboard with MC data
+          $('#totalPlayers').textContent = totalPlayers;
+          $('#onlineNow').textContent = onlineCount;
+          
+          // Load and display MC players in the dashboard
+          try {
+            const mcPlayerData = await jget('/api/mc-data/players');
+            if (mcPlayerData.players && mcPlayerData.players.length > 0) {
+              const makeChip = (p) => `<button class="btn" onclick="openMcPlayerDetails('${p.name}')">${p.name}<span class='tag'>${p.status?.game_mode || 'unknown'}</span></button>`;
+              $('#onlineList').innerHTML = mcPlayerData.players.map(makeChip).join('');
+              $('#onlineEmpty').style.display = 'none';
+            } else {
+              $('#onlineList').innerHTML = '';
+              $('#onlineEmpty').style.display = 'block';
+            }
+          } catch (e) {
+            console.warn('Could not load MC player data for dashboard:', e.message);
+          }
+        } else if (dashboardData && dashboardData.current_stats) {
+          // Fallback to dashboard data if MC data not available
+          const stats = dashboardData.current_stats;
+          onlineCount = stats.online_players || 0;
+          totalPlayers = stats.total_players || 0;
+          
+          $('#totalPlayers').textContent = totalPlayers;
+          $('#onlineNow').textContent = onlineCount;
+        }
+        
+        $('#statusChip').innerHTML = 'Status: <span class="tag">online</span>' + (status.rcon? ' <span class="tag">RCON</span>' : ' <span class="tag">no RCON</span>') + 
+          (mcSummary && mcSummary.available ? ' <span class="tag">MC Data</span>' : '');
         $('#rconNote').textContent = status.rcon ? 'RCON enabled.' : 'RCON disabled; only "list" is emulated.';
         $('#nextRestart').textContent = status.next_restart_iso ? fmtDate(status.next_restart_iso) : '—';
         $('#nextRestart2').textContent = $('#nextRestart').textContent;
         $('#nextRestartIn').textContent = status.next_restart_seconds!=null ? (Math.floor(status.next_restart_seconds/60)+' min') : '—';
         
-        // Update enhanced server status card
-        if (serverStatus) {
+        // Update enhanced server status card - prioritize MC data
+        if (mcSummary && mcSummary.available) {
+          const systemStatus = 'active'; // If we have MC data, server is active
+          const statusClass = 'status-online';
+          $('#serverStatusText').innerHTML = `<span class="status-indicator ${statusClass}"></span>${systemStatus}`;
+          
+          const rconStatus = status.rcon ? 'Available' : 'Unavailable';
+          const rconClass = status.rcon ? 'status-online' : 'status-offline';
+          $('#serverRconStatus').innerHTML = `<span class="status-indicator ${rconClass}"></span>${rconStatus}`;
+          
+          $('#serverStatusDetail').textContent = `${onlineCount} players online • MC Data Collector active`;
+        } else if (serverStatus) {
           const systemStatus = serverStatus.system_status || 'unknown';
           const statusClass = systemStatus === 'active' ? 'status-online' : 
                              systemStatus === 'inactive' ? 'status-offline' : 'status-unknown';
@@ -1120,26 +1153,19 @@
           $('#serverStatusDetail').textContent = 'Live log tracking enabled.';
         }
         
-        // Update quick stats if available
-        if (dashboardData && dashboardData.current_stats) {
-          const stats = dashboardData.current_stats;
-          $('#totalPlayers').textContent = stats.total_players || '0';
-          $('#onlineNow').textContent = stats.online_players || '0';
-          
-          // Update recent activity
-          if (dashboardData.recent_activity) {
-            const activities = dashboardData.recent_activity.slice(0, 5).map(act => {
-              const icon = act.type === 'join' ? '🟢' : '🔴';
-              const time = new Date(act.timestamp).toLocaleTimeString();
-              return `<div class="small" style="margin-bottom:4px">${icon} ${act.username} ${act.type === 'join' ? 'joined' : 'left'} at ${time}</div>`;
-            }).join('');
-            $('#recentActivity').innerHTML = activities || '<div class="empty">No recent activity</div>';
-          }
-          
-          // Update player trend chart on dashboard
-          if (dashboardData.player_trend && dashboardData.player_trend.length > 0) {
-            updatePlayerTrendChart(dashboardData.player_trend);
-          }
+        // Update recent activity with priority to MC data
+        if (dashboardData && dashboardData.recent_activity) {
+          const activities = dashboardData.recent_activity.slice(0, 5).map(act => {
+            const icon = act.type === 'join' ? '🟢' : '🔴';
+            const time = new Date(act.timestamp).toLocaleTimeString();
+            return `<div class="small" style="margin-bottom:4px">${icon} ${act.username} ${act.type === 'join' ? 'joined' : 'left'} at ${time}</div>`;
+          }).join('');
+          $('#recentActivity').innerHTML = activities || '<div class="empty">No recent activity</div>';
+        }
+        
+        // Update player trend chart on dashboard
+        if (dashboardData && dashboardData.player_trend && dashboardData.player_trend.length > 0) {
+          updatePlayerTrendChart(dashboardData.player_trend);
         }
       }catch(e){
         $('#statusChip').innerHTML = 'Status: <span class="tag">error</span>';
@@ -1200,9 +1226,44 @@
     }
     $('#sendCmd').addEventListener('click', runList);
 
-    // Online
+    // Online players - prioritize MC data, fallback to log-based detection
     async function loadOnline(copyToStatus=false){
       try{
+        // Try MC data first
+        const mcPlayerData = await jget('/api/mc-data/players').catch(() => null);
+        
+        if (mcPlayerData && mcPlayerData.players && mcPlayerData.players.length > 0) {
+          // Use MC data
+          const onlineCountEl = $('#onlineCount');
+          if (onlineCountEl) onlineCountEl.textContent = mcPlayerData.online_count ?? mcPlayerData.players.length;
+          
+          const target1 = $('#onlineList'), target2 = $('#onlineList2');
+          const empty1 = $('#onlineEmpty'), empty2 = $('#onlineEmpty2');
+          const makeChip = (p)=>`<button class="btn" onclick="openMcPlayerDetails('${p.name}')">${p.name}<span class='tag'>${p.status?.game_mode || 'unknown'}</span></button>`;
+          
+          if (target1) {
+            target1.innerHTML = mcPlayerData.players.map(makeChip).join('');
+          }
+          if (target2) {
+            target2.innerHTML = mcPlayerData.players.map(makeChip).join('');
+          }
+          if (empty1) {
+            empty1.style.display = 'none';
+          }
+          if (empty2) {
+            empty2.style.display = 'none';
+          }
+          
+          if(copyToStatus && target1 && empty1){ 
+            const onlineListEl = $('#onlineList');
+            const onlineEmptyEl = $('#onlineEmpty');
+            if (onlineListEl) onlineListEl.innerHTML = target1.innerHTML; 
+            if (onlineEmptyEl) onlineEmptyEl.style.display = empty1.style.display; 
+          }
+          return;
+        }
+        
+        // Fallback to log-based data
         const data = await jget('/api/online');
         const onlineCountEl = $('#onlineCount');
         if (onlineCountEl) onlineCountEl.textContent = data.count ?? 0;
@@ -1283,6 +1344,12 @@
       const p = playersCache.find(x=>x.username===name);
       if(p) return openPlayer(p.id);
       loadPlayers().then(()=>{ const p2 = playersCache.find(x=>x.username===name); if(p2) openPlayer(p2.id); });
+    }
+    
+    // Open MC player details (simpler version for MC data)
+    function openMcPlayerDetails(name) {
+      // For now, just show an alert with basic info - could be enhanced to show a modal
+      alert(`Player: ${name}\nSource: MC Data Collector\nClick on Players tab for detailed information.`);
     }
     $('#playerModal').addEventListener('click', (e)=>{ if(e.target.id==='playerModal') closePlayerModal(); });
 
@@ -1553,21 +1620,30 @@
     
     async function updateLiveMetrics() {
       try {
-        const data = await jget('/api/performance/live');
+        const [perfData, mcPerformanceData] = await Promise.all([
+          jget('/api/performance/live'),
+          jget('/api/mc-data/performance').catch(() => null)
+        ]);
         
-        $('#liveCPU').textContent = data.cpu?.usage ? data.cpu.usage + '%' : '—';
-        $('#liveRAM').textContent = data.memory?.usage ? data.memory.usage + '%' : '—';
-        $('#liveDisk').textContent = data.disk?.usage ? data.disk.usage + '%' : '—';
-        $('#liveTPS').textContent = data.tps ? data.tps.toFixed(1) : '—';
-        $('#networkRx').textContent = data.network?.rxRate ? data.network.rxRate + ' KB/s' : '—';
-        $('#networkTx').textContent = data.network?.txRate ? data.network.txRate + ' KB/s' : '—';
-        $('#serverUptime').textContent = data.uptime ? fmtDur(data.uptime) : '—';
-        $('#avgTPS').textContent = data.tps ? data.tps.toFixed(1) : '—'; // Show same TPS for now
+        // Prioritize MC data for server-specific metrics
+        let tps = perfData.tps;
+        if (mcPerformanceData && mcPerformanceData.ticks) {
+          tps = mcPerformanceData.ticks.tps;
+        }
+        
+        $('#liveCPU').textContent = perfData.cpu?.usage ? perfData.cpu.usage + '%' : '—';
+        $('#liveRAM').textContent = perfData.memory?.usage ? perfData.memory.usage + '%' : '—';
+        $('#liveDisk').textContent = perfData.disk?.usage ? perfData.disk.usage + '%' : '—';
+        $('#liveTPS').textContent = tps ? tps.toFixed(1) : '—';
+        $('#networkRx').textContent = perfData.network?.rxRate ? perfData.network.rxRate + ' KB/s' : '—';
+        $('#networkTx').textContent = perfData.network?.txRate ? perfData.network.txRate + ' KB/s' : '—';
+        $('#serverUptime').textContent = perfData.uptime ? fmtDur(perfData.uptime) : '—';
+        $('#avgTPS').textContent = tps ? tps.toFixed(1) : '—'; // Use same TPS for average
         
         // Update load average
-        $('#load1').textContent = data.load?.[1] ? data.load[1].toFixed(2) : '—';
-        $('#load5').textContent = data.load?.[5] ? data.load[5].toFixed(2) : '—';
-        $('#load15').textContent = data.load?.[15] ? data.load[15].toFixed(2) : '—';
+        $('#load1').textContent = perfData.load?.[1] ? perfData.load[1].toFixed(2) : '—';
+        $('#load5').textContent = perfData.load?.[5] ? perfData.load[5].toFixed(2) : '—';
+        $('#load15').textContent = perfData.load?.[15] ? perfData.load[15].toFixed(2) : '—';
       } catch (e) {
         console.error('Failed to update live metrics:', e);
       }
@@ -1698,21 +1774,6 @@
       try {
         const data = await jget('/api/server/status');
         
-        // Update status with indicators
-        const systemStatus = data.system_status || 'unknown';
-        const statusClass = systemStatus === 'active' ? 'status-online' : 
-                           systemStatus === 'inactive' ? 'status-offline' : 'status-unknown';
-        $('#serverSystemStatus').innerHTML = `<span class="status-indicator ${statusClass}"></span>${systemStatus}`;
-        
-        $('#serverOnlinePlayers').textContent = data.online_players || '0';
-        
-        const rconStatus = data.rcon_available ? 'Available' : 'Unavailable';
-        const rconClass = data.rcon_available ? 'status-online' : 'status-offline';
-        $('#serverRconStatus').innerHTML = `<span class="status-indicator ${rconClass}"></span>${rconStatus}`;
-        
-        $('#serverLastAction').textContent = data.recent_actions && data.recent_actions.length > 0 ? 
-          fmtDate(data.recent_actions[0].at) : '—';
-        
         // Update action history
         if (data.recent_actions) {
           const historyHtml = data.recent_actions.map(action => {
@@ -1732,10 +1793,6 @@
         }
       } catch (e) {
         console.error('Failed to update server status:', e);
-        $('#serverSystemStatus').innerHTML = '<span class="status-indicator status-unknown"></span>Error';
-        $('#serverOnlinePlayers').textContent = '—';
-        $('#serverRconStatus').innerHTML = '<span class="status-indicator status-offline"></span>Error';
-        $('#serverLastAction').textContent = '—';
       }
     }
     
@@ -2015,22 +2072,38 @@
     // System Monitoring
     async function loadSystemMonitoring() {
       try {
-        const fileStats = await jget('/api/files/stats').catch(() => null);
+        const [fileStats, mcSecurityData] = await Promise.all([
+          jget('/api/files/stats').catch(() => null),
+          jget('/api/mc-data/security').catch(() => null)
+        ]);
         
-        // Update file monitoring stats
-        if (fileStats) {
-          const fileStatsHtml = `
-            <div class="grid cols-2">
-              <div class="small">Banned Players: <b>${fileStats.banned_players || 0}</b></div>
-              <div class="small">Banned IPs: <b>${fileStats.banned_ips || 0}</b></div>
-              <div class="small">Whitelist: <b>${fileStats.whitelist || 0}</b></div>
-              <div class="small">Operators: <b>${fileStats.operators || 0}</b></div>
-              <div class="small">Server Settings: <b>${fileStats.server_settings || 0}</b></div>
-              <div class="small">Active Watchers: <b>${fileStats.active_watchers || 0}</b></div>
-            </div>
+        // Prioritize MC data for security stats, fallback to file stats
+        let statsHtml = '<div class="grid cols-2">';
+        
+        if (mcSecurityData) {
+          statsHtml += `
+            <div class="small">Banned Players: <b>${mcSecurityData.banned_players?.count || 0}</b></div>
+            <div class="small">Banned IPs: <b>${mcSecurityData.banned_ips?.count || 0}</b></div>
+            <div class="small">Whitelist: <b>${mcSecurityData.whitelist?.enabled ? 'Enabled' : 'Disabled'}</b></div>
+            <div class="small">Operators: <b>${mcSecurityData.operators?.count || 0}</b></div>
+            <div class="small">Data Source: <b>MC Data Collector</b></div>
+            <div class="small">Active Watchers: <b>${fileStats?.active_watchers || 0}</b></div>
           `;
-          $('#fileMonitorStats').innerHTML = fileStatsHtml;
+        } else if (fileStats) {
+          statsHtml += `
+            <div class="small">Banned Players: <b>${fileStats.banned_players || 0}</b></div>
+            <div class="small">Banned IPs: <b>${fileStats.banned_ips || 0}</b></div>
+            <div class="small">Whitelist: <b>${fileStats.whitelist || 0}</b></div>
+            <div class="small">Operators: <b>${fileStats.operators || 0}</b></div>
+            <div class="small">Server Settings: <b>${fileStats.server_settings || 0}</b></div>
+            <div class="small">Active Watchers: <b>${fileStats.active_watchers || 0}</b></div>
+          `;
+        } else {
+          statsHtml += '<div class="small">No file monitoring data available</div>';
         }
+        
+        statsHtml += '</div>';
+        $('#fileMonitorStats').innerHTML = statsHtml;
         
         // Load system history chart
         loadSystemHistoryChart();
