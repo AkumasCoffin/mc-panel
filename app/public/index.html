@@ -390,7 +390,9 @@
         </section>
 
         <section class="card two">
-          <h3>Player Activity Trend</h3>
+          <h3>Player Activity Trend 
+            <button class="btn ghost" style="font-size:12px; padding:2px 6px; margin-left:8px;" onclick="showChartInfo('player-trend')">ℹ️</button>
+          </h3>
           <div class="chart-container" style="height:250px">
             <canvas id="analyticsPlayerChart"></canvas>
           </div>
@@ -402,28 +404,36 @@
         </section>
 
         <section class="card half">
-          <h3>Session Length Distribution</h3>
+          <h3>Session Length Distribution 
+            <button class="btn ghost" style="font-size:12px; padding:2px 6px; margin-left:8px;" onclick="showChartInfo('session-dist')">ℹ️</button>
+          </h3>
           <div class="chart-container" style="height:200px">
             <canvas id="sessionDistChart"></canvas>
           </div>
         </section>
 
         <section class="card half">
-          <h3>Daily Player Counts (Last 7 Days)</h3>
+          <h3>Daily Player Counts (Last 7 Days) 
+            <button class="btn ghost" style="font-size:12px; padding:2px 6px; margin-left:8px;" onclick="showChartInfo('daily-players')">ℹ️</button>
+          </h3>
           <div class="chart-container" style="height:200px">
             <canvas id="dailyPlayerChart"></canvas>
           </div>
         </section>
 
         <section class="card">
-          <h3>Hourly Activity Heatmap (Last 7 Days)</h3>
+          <h3>Hourly Activity Heatmap (Last 7 Days) 
+            <button class="btn ghost" style="font-size:12px; padding:2px 6px; margin-left:8px;" onclick="showChartInfo('hourly-heatmap')">ℹ️</button>
+          </h3>
           <div class="chart-container" style="height:250px">
             <canvas id="hourlyActivityChart"></canvas>
           </div>
         </section>
 
         <section class="card half">
-          <h3>Top Commands Usage</h3>
+          <h3>Top Commands Usage 
+            <button class="btn ghost" style="font-size:12px; padding:2px 6px; margin-left:8px;" onclick="showChartInfo('command-usage')">ℹ️</button>
+          </h3>
           <div class="chart-container" style="height:250px">
             <canvas id="commandChart"></canvas>
           </div>
@@ -460,23 +470,23 @@
         </section>
 
         <section class="card third">
-          <h3>Network Traffic</h3>
-          <div id="networkMetrics" class="grid cols-2">
+          <h3>Server Performance</h3>
+          <div id="serverMetrics" class="grid cols-2">
             <div class="metric-box">
               <div class="metric-value" id="networkRx">—</div>
-              <div class="metric-label">RX Rate (KB/s)</div>
+              <div class="metric-label">Network RX Rate</div>
             </div>
             <div class="metric-box">
               <div class="metric-value" id="networkTx">—</div>
-              <div class="metric-label">TX Rate (KB/s)</div>
+              <div class="metric-label">Network TX Rate</div>
             </div>
             <div class="metric-box">
-              <div class="metric-value" id="systemUptime">—</div>
-              <div class="metric-label">Uptime</div>
+              <div class="metric-value" id="serverUptime">—</div>
+              <div class="metric-label">Server Uptime</div>
             </div>
             <div class="metric-box">
-              <div class="metric-value" id="systemLoad">—</div>
-              <div class="metric-label">Load Average</div>
+              <div class="metric-value" id="avgTPS">—</div>
+              <div class="metric-label">Avg TPS (5min)</div>
             </div>
           </div>
         </section>
@@ -494,14 +504,18 @@
         </section>
 
         <section class="card">
-          <h3>CPU & Memory History</h3>
+          <h3>CPU & Memory History 
+            <button class="btn ghost" style="font-size:12px; padding:2px 6px; margin-left:8px;" onclick="showChartInfo('cpu-memory')">ℹ️</button>
+          </h3>
           <div class="chart-container" style="height:250px">
             <canvas id="performanceCPUChart"></canvas>
           </div>
         </section>
 
         <section class="card">
-          <h3>Network & TPS History</h3>
+          <h3>Network & TPS History 
+            <button class="btn ghost" style="font-size:12px; padding:2px 6px; margin-left:8px;" onclick="showChartInfo('network-tps')">ℹ️</button>
+          </h3>
           <div class="chart-container" style="height:250px">
             <canvas id="performanceNetworkChart"></canvas>
           </div>
@@ -836,6 +850,22 @@
   <div id="toast" class="toast">Saved.</div>
 
   <script>
+    // Chart info popup function
+    function showChartInfo(chartType) {
+      const infoTexts = {
+        'cpu-memory': 'Shows CPU and Memory usage over time. CPU percentage indicates processor load, Memory percentage shows RAM utilization. High sustained values may indicate performance issues.',
+        'network-tps': 'Displays online player count over time. This helps track server activity patterns and peak usage times.',
+        'player-trend': 'Shows unique player count and total sessions over the selected period. Useful for understanding server growth and player engagement trends.',
+        'session-dist': 'Breakdown of player session lengths into categories (short, medium, long sessions). Helps understand how long players typically stay connected.',
+        'daily-players': 'Daily unique player counts for the last 7 days. Shows both unique players and total sessions to track server activity patterns.',
+        'hourly-heatmap': 'Shows when players are most active during different hours. Darker colors indicate higher activity. Useful for planning events or maintenance.',
+        'command-usage': 'Most frequently used commands by players. Helps server administrators understand player behavior and popular features.'
+      };
+      
+      const text = infoTexts[chartType] || 'Chart information not available.';
+      alert(text); // Simple alert for now, could be improved with a modal
+    }
+
     // Defensive: ensure only Dashboard is visible at boot, in case of cachey CSS
     ['players','moderation','schedules','settings','audit','analytics','monitoring','performance','server-controls']
       .forEach(t => { const el = document.getElementById('tab-'+t); if (el) el.hidden = true; });
@@ -1315,8 +1345,8 @@
         $('#liveTPS').textContent = data.tps ? data.tps.toFixed(1) : '—';
         $('#networkRx').textContent = data.network?.rxRate ? data.network.rxRate + ' KB/s' : '—';
         $('#networkTx').textContent = data.network?.txRate ? data.network.txRate + ' KB/s' : '—';
-        $('#systemUptime').textContent = data.uptime ? fmtDur(data.uptime) : '—';
-        $('#systemLoad').textContent = data.load?.[1] ? data.load[1].toFixed(2) : '—';
+        $('#serverUptime').textContent = data.uptime ? fmtDur(data.uptime) : '—';
+        $('#avgTPS').textContent = data.tps ? data.tps.toFixed(1) : '—'; // Show same TPS for now
       } catch (e) {
         console.error('Failed to update live metrics:', e);
       }
@@ -1334,7 +1364,8 @@
           const labels = data.system_metrics.map(m => new Date(m.recorded_at).toLocaleTimeString());
           
           // Update CPU chart
-          const cpuChart = new Chart($('#performanceCPUChart'), {
+          const cpuCtx = $('#performanceCPUChart').getContext('2d');
+          const cpuChart = new Chart(cpuCtx, {
             type: 'line',
             data: {
               labels: labels,
@@ -1349,8 +1380,25 @@
                 borderColor: '#44d3a8',
                 backgroundColor: 'rgba(68, 211, 168, 0.1)'
               }]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: {
+                legend: { position: 'top' }
+              },
+              scales: {
+                y: { beginAtZero: true, max: 100 }
+              }
             }
           });
+        } else {
+          // Show "no data" message when no system metrics
+          const cpuCtx = $('#performanceCPUChart').getContext('2d');
+          cpuCtx.fillStyle = '#aab3c7';
+          cpuCtx.font = '14px system-ui';
+          cpuCtx.textAlign = 'center';
+          cpuCtx.fillText('No historical data available yet', cpuCtx.canvas.width / 2, cpuCtx.canvas.height / 2);
         }
         
         // Create Network chart with online players
@@ -1359,7 +1407,8 @@
           const networkData = data.system_metrics ? data.system_metrics.map(m => (m.network_rx_rate || 0) + (m.network_tx_rate || 0)) : [];
           const labels = data.online_history.map(m => new Date(m.recorded_at).toLocaleTimeString());
           
-          const networkChart = new Chart($('#performanceNetworkChart'), {
+          const networkCtx = $('#performanceNetworkChart').getContext('2d');
+          const networkChart = new Chart(networkCtx, {
             type: 'line',
             data: {
               labels: labels,
@@ -1369,11 +1418,39 @@
                 borderColor: '#ffb020',
                 backgroundColor: 'rgba(255, 176, 32, 0.1)'
               }]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: {
+                legend: { position: 'top' }
+              },
+              scales: {
+                y: { beginAtZero: true }
+              }
             }
           });
+        } else {
+          // Show "no data" message when no online history
+          const networkCtx = $('#performanceNetworkChart').getContext('2d');
+          networkCtx.fillStyle = '#aab3c7';
+          networkCtx.font = '14px system-ui';
+          networkCtx.textAlign = 'center';
+          networkCtx.fillText('No player history data available yet', networkCtx.canvas.width / 2, networkCtx.canvas.height / 2);
         }
       } catch (e) {
         console.error('Failed to update performance history:', e);
+        // Show error message in charts
+        const cpuCtx = $('#performanceCPUChart').getContext('2d');
+        const networkCtx = $('#performanceNetworkChart').getContext('2d');
+        cpuCtx.fillStyle = '#ff5d5d';
+        cpuCtx.font = '14px system-ui';
+        cpuCtx.textAlign = 'center';
+        cpuCtx.fillText('Failed to load chart data', cpuCtx.canvas.width / 2, cpuCtx.canvas.height / 2);
+        networkCtx.fillStyle = '#ff5d5d';
+        networkCtx.font = '14px system-ui';
+        networkCtx.textAlign = 'center';
+        networkCtx.fillText('Failed to load chart data', networkCtx.canvas.width / 2, networkCtx.canvas.height / 2);
       }
     }
     
