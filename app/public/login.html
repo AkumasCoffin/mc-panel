@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>MC Panel - Login</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root{
+      --bg:#0f1115; --panel:#151823; --muted:#8b90a3; --text:#e6e9ef;
+      --brand:#7c5cff; --brand-2:#44d3a8; --warn:#ffb020; --danger:#ff5d5d;
+      --border:#212535; --chip:#1b2030;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{margin:0; background:linear-gradient(180deg,#0f1115,#0d0f14); color:var(--text); font:14px/1.4 system-ui,Segoe UI,Inter,Arial,sans-serif;}
+    .login-container{display:flex; align-items:center; justify-content:center; min-height:100vh; padding:20px;}
+    .login-form{width:min(400px,100%); background:var(--panel); border:1px solid var(--border); border-radius:16px; padding:24px; box-shadow: 0 10px 40px rgba(0,0,0,.5);}
+    .brand{display:flex; align-items:center; gap:10px; margin-bottom:24px; justify-content:center;}
+    .brand svg{width:24px; height:24px}
+    .brand h1{font-size:18px; margin:0}
+    .form-group{margin-bottom:16px}
+    .form-group label{display:block; margin-bottom:6px; color:#aab3c7; font-size:13px}
+    input[type=text], input[type=password]{background:#0d111a; color:var(--text); border:1px solid var(--border); border-radius:10px; padding:12px; width:100%;}
+    input:focus{outline:none; border-color:var(--brand)}
+    .btn{background:linear-gradient(90deg,rgba(124,92,255,.25),rgba(68,211,168,.18)); color:#dfe6f3; border:1px solid #2a2f44; border-radius:10px; padding:12px 20px; cursor:pointer; transition:.15s; width:100%; font-size:14px}
+    .btn:hover{filter:brightness(1.1)}
+    .btn:disabled{opacity:0.6; cursor:not-allowed}
+    .error{background:rgba(255,93,93,.12); border:1px solid #4b1a1a; color:#ff9999; padding:10px 12px; border-radius:10px; margin-bottom:16px; font-size:13px}
+    .small{font-size:12px; color:#aab3c7; text-align:center; margin-top:16px}
+  </style>
+</head>
+<body>
+  <div class="login-container">
+    <form class="login-form" id="loginForm">
+      <div class="brand">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 12l7-9 7 9-7 9-7-9z" stroke-width="1.5"/><path d="M3 12h18" stroke-width="1.5"/></svg>
+        <h1>MC Panel Login</h1>
+      </div>
+      
+      <div id="errorMessage" class="error" style="display:none"></div>
+      
+      <div class="form-group">
+        <label for="username">Username</label>
+        <input type="text" id="username" name="username" required autocomplete="username" />
+      </div>
+      
+      <div class="form-group">
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" required autocomplete="current-password" />
+      </div>
+      
+      <button type="submit" class="btn" id="loginBtn">Login</button>
+      
+      <div class="small">Enter your admin credentials to access the panel</div>
+    </form>
+  </div>
+
+  <script>
+    const $ = s => document.querySelector(s);
+    
+    function showError(message) {
+      const errorEl = $('#errorMessage');
+      errorEl.textContent = message;
+      errorEl.style.display = 'block';
+    }
+    
+    function hideError() {
+      $('#errorMessage').style.display = 'none';
+    }
+    
+    async function login(username, password) {
+      const response = await fetch('/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ username, password })
+      });
+      
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ error: 'Login failed' }));
+        throw new Error(error.error || 'Login failed');
+      }
+      
+      return response.json();
+    }
+    
+    $('#loginForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      hideError();
+      
+      const username = $('#username').value.trim();
+      const password = $('#password').value;
+      const loginBtn = $('#loginBtn');
+      
+      if (!username || !password) {
+        showError('Please enter both username and password');
+        return;
+      }
+      
+      loginBtn.disabled = true;
+      loginBtn.textContent = 'Logging in...';
+      
+      try {
+        await login(username, password);
+        // Redirect to main panel on successful login
+        window.location.href = '/';
+      } catch (error) {
+        showError(error.message);
+      } finally {
+        loginBtn.disabled = false;
+        loginBtn.textContent = 'Login';
+      }
+    });
+    
+    // Focus username field on load
+    window.addEventListener('load', () => {
+      $('#username').focus();
+    });
+  </script>
+</body>
+</html>

@@ -12,6 +12,7 @@
     "cron-parser": "^4.9.0",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
+    "express-session": "^1.18.2",
     "node-cron": "^3.0.3",
     "rcon-client": "^4.2.5",
     "sqlite3": "^5.1.7"
