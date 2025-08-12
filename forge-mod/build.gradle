@@ -1,6 +1,23 @@
-plugins {
-    id 'java'
+buildscript {
+    repositories {
+        // These repositories are only for Gradle plugin usage. Do not add them to project repositories.
+        gradlePluginPortal()
+        maven {
+            name = 'MinecraftForge'
+            url = 'https://maven.minecraftforge.net'
+        }
+    }
+    dependencies {
+        classpath group: 'net.minecraftforge.gradle', name: 'ForgeGradle', version: '6.0.+', changing: true
+    }
 }
+
+plugins {
+    id 'eclipse'
+    id 'maven-publish'
+}
+
+apply plugin: 'net.minecraftforge.gradle'
 
 version = '1.0.0'
 group = 'com.akumas.mcpanel'
@@ -10,15 +27,60 @@ archivesBaseName = 'mcpanel-forge'
 java.toolchain.languageVersion = JavaLanguageVersion.of(17)
 
 repositories {
+    // These repositories are only for Gradle plugin usage. Do not add them to build dependencies.
+    maven {
+        name = 'MinecraftForge'
+        url = 'https://maven.minecraftforge.net'
+    }
     mavenCentral()
 }
 
+minecraft {
+    // The mappings can be changed at any time and must be in the following format.
+    // Channel:   Version:
+    // official   MCVersion             Official field/method names from Mojang mapping files
+    // parchment  YYYY.MM.DD-MCVersion  Open community-sourced parameter names and javadocs layered on top of official
+
+    mappings channel: 'official', version: '1.20.1'
+
+    // accessTransformer = file('src/main/resources/META-INF/accesstransformer.cfg')
+
+    // Default run configurations.
+    // These can be tweaked, removed, or duplicated as needed.
+    runs {
+        server {
+            workingDirectory project.file('run/server')
+
+            // Recommended logging data for a userdev environment
+            // The markers can be added/remove as needed separated by commas.
+            // "SCAN": For mods scan.
+            // "REGISTRIES": For firing of registry events.
+            // "REGISTRYDUMP": For getting the contents of all registries.
+            property 'forge.logging.markers', 'REGISTRIES'
+
+            // Recommended logging level for the console
+            // You can set various levels here.
+            // Please read: https://stackoverflow.com/questions/2031163/when-to-use-the-different-log-levels
+            property 'forge.logging.console.level', 'debug'
+
+            args '--nogui'
+
+            mods {
+                mcpanel {
+                    source sourceSets.main
+                }
+            }
+        }
+    }
+}
+
+sourceSets.main.resources { srcDir 'src/generated/resources' }
+
 dependencies {
+    // Specify the version of Minecraft to use
+    minecraft 'net.minecraftforge:forge:1.20.1-47.4.0'
+
     implementation 'com.google.code.gson:gson:2.10.1'
-    
-    // Enhanced logging dependencies
-    implementation 'org.apache.logging.log4j:log4j-api:2.19.0'
-    implementation 'org.apache.logging.log4j:log4j-core:2.19.0'
     
     // Additional utility dependencies for enhanced functionality
     implementation 'org.apache.commons:commons-lang3:3.12.0'

@@ -47,12 +47,19 @@ public class Collectors {
         try {
             // Get data from PlayerEventTracker if available
             if (MCPanelMod.getPlayerTracker() != null) {
-                JsonObject playerTrackerData = MCPanelMod.getPlayerTracker().getPlayerData();
+                JsonObject playerTrackerData = MCPanelMod.getPlayerTracker().getAllPlayerData();
                 
                 // Extract key information with real-time online status
-                data.addProperty("online_count", playerTrackerData.get("online_count").getAsInt());
-                data.add("players", playerTrackerData.get("online_players")); // Only currently online players
-                data.add("all_players", playerTrackerData.get("all_players")); // All players with online status
+                if (playerTrackerData.has("online_count")) {
+                    data.addProperty("online_count", playerTrackerData.get("online_count").getAsInt());
+                }
+                if (playerTrackerData.has("players")) {
+                    data.add("all_players", playerTrackerData.get("players")); // All players with online status
+                }
+                
+                // Get only online players
+                JsonArray onlinePlayers = MCPanelMod.getPlayerTracker().getOnlinePlayers();
+                data.add("players", onlinePlayers); // Only currently online players
                 data.add("player_stats", playerTrackerData.get("player_stats"));
                 data.add("player_inventories", playerTrackerData.get("player_inventories"));
                 data.add("recent_events", playerTrackerData.get("recent_events"));
