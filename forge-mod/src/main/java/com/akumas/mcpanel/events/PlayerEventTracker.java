@@ -2,13 +2,22 @@ package com.akumas.mcpanel.events;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.core.BlockPos;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraftforge.event.entity.player.PlayerEvent;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.minecraftforge.event.entity.living.LivingDeathEvent;
+import net.minecraftforge.event.entity.player.AdvancementEvent;
+
 import java.util.logging.Logger;
 import java.util.logging.Level;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.Map;
 import java.util.Set;
-import java.util.UUID;
 
 /**
  * Tracks player-specific events and maintains detailed player data.
@@ -42,82 +51,107 @@ public class PlayerEventTracker {
     /**
      * Handles player join event
      * Adds player to online tracking set and creates player data
-     * TODO: Add @SubscribeEvent annotation when Forge APIs are available
      */
-    // @SubscribeEvent
-    public void onPlayerJoin(Object event) {
+    @SubscribeEvent
+    public void onPlayerJoin(PlayerEvent.PlayerLoggedInEvent event) {
         try {
-            // TODO: Extract player data when PlayerEvent.PlayerLoggedInEvent is available
-            // PlayerEvent.PlayerLoggedInEvent joinEvent = (PlayerEvent.PlayerLoggedInEvent) event;
-            // ServerPlayer player = (ServerPlayer) joinEvent.getEntity();
+            Player player = event.getEntity();
+            String playerName = player.getName().getString();
+            String playerUUID = player.getUUID().toString();
             
-            // For now, simulate player join
-            String playerUuid = UUID.randomUUID().toString();
-            String playerName = "TestPlayer_" + System.currentTimeMillis() % 1000;
+            LOGGER.info("Player joined: " + playerName + " (" + playerUUID + ")");
             
-            // Add player to online set for real-time tracking
-            onlinePlayers.add(playerUuid);
+            // Add to online players set
+            onlinePlayers.add(playerUUID);
             
-            // Create player data
-            JsonObject player = createPlayerData(playerUuid, playerName);
-            playerData.put(playerUuid, player);
+            // Create player data object
+            JsonObject playerInfo = new JsonObject();
+            playerInfo.addProperty("uuid", playerUUID);
+            playerInfo.addProperty("name", playerName);
+            playerInfo.addProperty("online", true);
+            playerInfo.addProperty("join_time", System.currentTimeMillis());
             
-            // Track join event
+            // Get player location
+            if (player instanceof ServerPlayer serverPlayer) {
+                BlockPos pos = serverPlayer.blockPosition();
+                JsonObject location = new JsonObject();
+                location.addProperty("world", serverPlayer.level().dimension().location().toString());
+                location.addProperty("x", pos.getX());
+                location.addProperty("y", pos.getY());
+                location.addProperty("z", pos.getZ());
+                playerInfo.add("location", location);
+                
+                // Get health status
+                JsonObject healthStatus = new JsonObject();
+                healthStatus.addProperty("health", serverPlayer.getHealth());
+                healthStatus.addProperty("max_health", serverPlayer.getMaxHealth());
+                healthStatus.addProperty("food_level", serverPlayer.getFoodData().getFoodLevel());
+                healthStatus.addProperty("experience_level", serverPlayer.experienceLevel);
+                healthStatus.addProperty("experience_points", serverPlayer.totalExperience);
+                playerInfo.add("health_status", healthStatus);
+                
+                // Update inventories
+                updatePlayerInventory(serverPlayer);
+            }
+            
+            playerData.put(playerUUID, playerInfo);
+            
+            // Add join event
             JsonObject joinEvent = new JsonObject();
             joinEvent.addProperty("type", "player_join");
             joinEvent.addProperty("timestamp", System.currentTimeMillis());
-            joinEvent.addProperty("player_uuid", playerUuid);
             joinEvent.addProperty("player_name", playerName);
-            joinEvent.addProperty("ip_address", "127.0.0.1"); // Simulated
+            joinEvent.addProperty("player_uuid", playerUUID);
+            joinEvent.addProperty("message", "Player joined the server");
             
             addPlayerEvent(joinEvent);
+            invalidateCache();
             
-            // Start tracking this player
-            startPlayerTracking(playerUuid);
-            
-            LOGGER.info("Player join tracked: " + playerName + " (UUID: " + playerUuid + ")");
-            refreshData();
         } catch (Exception e) {
-            LOGGER.log(Level.WARNING, "Error tracking player join", e);
+            LOGGER.log(Level.WARNING, "Error handling player join event", e);
         }
     }
     
     /**
      * Handles player leave event
      * Removes player from online tracking set but keeps historical data
-     * TODO: Add @SubscribeEvent annotation when Forge APIs are available
      */
-    // @SubscribeEvent
-    public void onPlayerLeave(Object event) {
+    @SubscribeEvent
+    public void onPlayerLeave(PlayerEvent.PlayerLoggedOutEvent event) {
         try {
-            // TODO: Extract player data when PlayerEvent.PlayerLoggedOutEvent is available
+            Player player = event.getEntity();
+            String playerName = player.getName().getString();
+            String playerUUID = player.getUUID().toString();
             
-            // For now, simulate player leave for existing online players
-            if (!onlinePlayers.isEmpty()) {
-                String playerUuid = onlinePlayers.iterator().next();
-                JsonObject player = playerData.get(playerUuid);
-                String playerName = player.get("name").getAsString();
+            LOGGER.info("Player left: " + playerName + " (" + playerUUID + ")");
+            
+            // Remove player from online set (but keep their data for history)
+            onlinePlayers.remove(playerUUID);
+            
+            // Update player's online status in their data
+            JsonObject playerInfo = playerData.get(playerUUID);
+            if (playerInfo != null) {
+                playerInfo.addProperty("online", false);
+                playerInfo.addProperty("last_seen", System.currentTimeMillis());
                 
-                // Remove player from online set (but keep their data for history)
-                onlinePlayers.remove(playerUuid);
-                
-                // Update player's online status in their data
-                player.addProperty("online", false);
-                player.addProperty("last_seen", System.currentTimeMillis());
-                
-                // Track leave event
-                JsonObject leaveEvent = new JsonObject();
-                leaveEvent.addProperty("type", "player_leave");
-                leaveEvent.addProperty("timestamp", System.currentTimeMillis());
-                leaveEvent.addProperty("player_uuid", playerUuid);
-                leaveEvent.addProperty("player_name", playerName);
-                leaveEvent.addProperty("session_duration", System.currentTimeMillis() - player.get("join_time").getAsLong());
-                
-                addPlayerEvent(leaveEvent);
-                
-                LOGGER.info("Player leave tracked: " + playerName + " (UUID: " + playerUuid + ")");
-                refreshData();
+                // Calculate session duration
+                long joinTime = playerInfo.has("join_time") ? playerInfo.get("join_time").getAsLong() : System.currentTimeMillis();
+                playerInfo.addProperty("session_duration", System.currentTimeMillis() - joinTime);
             }
+            
+            // Track leave event
+            JsonObject leaveEvent = new JsonObject();
+            leaveEvent.addProperty("type", "player_leave");
+            leaveEvent.addProperty("timestamp", System.currentTimeMillis());
+            leaveEvent.addProperty("player_uuid", playerUUID);
+            leaveEvent.addProperty("player_name", playerName);
+            if (playerInfo != null && playerInfo.has("join_time")) {
+                leaveEvent.addProperty("session_duration", System.currentTimeMillis() - playerInfo.get("join_time").getAsLong());
+            }
+            
+            addPlayerEvent(leaveEvent);
+            invalidateCache();
+            
         } catch (Exception e) {
             LOGGER.log(Level.WARNING, "Error tracking player leave", e);
         }
@@ -125,33 +159,42 @@ public class PlayerEventTracker {
     
     /**
      * Handles player death event
-     * TODO: Add @SubscribeEvent annotation when Forge APIs are available
      */
-    // @SubscribeEvent
-    public void onPlayerDeath(Object event) {
+    @SubscribeEvent
+    public void onPlayerDeath(LivingDeathEvent event) {
         try {
-            // TODO: Extract death data when LivingDeathEvent is available
-            
-            // Simulate death tracking
-            if (!playerData.isEmpty()) {
-                String playerUuid = playerData.keySet().iterator().next();
-                JsonObject player = playerData.get(playerUuid);
-                String playerName = player.get("name").getAsString();
+            if (event.getEntity() instanceof Player player) {
+                String playerName = player.getName().getString();
+                String playerUUID = player.getUUID().toString();
                 
+                LOGGER.info("Player death: " + playerName);
+                
+                // Update player stats
+                JsonObject stats = playerStats.computeIfAbsent(playerUUID, k -> new JsonObject());
+                int deaths = stats.has("deaths") ? stats.get("deaths").getAsInt() : 0;
+                stats.addProperty("deaths", deaths + 1);
+                stats.addProperty("last_death", System.currentTimeMillis());
+                
+                // Track death event
                 JsonObject deathEvent = new JsonObject();
                 deathEvent.addProperty("type", "player_death");
                 deathEvent.addProperty("timestamp", System.currentTimeMillis());
-                deathEvent.addProperty("player_uuid", playerUuid);
+                deathEvent.addProperty("player_uuid", playerUUID);
                 deathEvent.addProperty("player_name", playerName);
-                deathEvent.addProperty("death_message", playerName + " died");
-                deathEvent.addProperty("cause", "unknown");
+                deathEvent.addProperty("death_message", event.getSource().getLocalizedDeathMessage(event.getEntity()).getString());
+                
+                if (player instanceof ServerPlayer serverPlayer) {
+                    BlockPos pos = serverPlayer.blockPosition();
+                    JsonObject location = new JsonObject();
+                    location.addProperty("world", serverPlayer.level().dimension().location().toString());
+                    location.addProperty("x", pos.getX());
+                    location.addProperty("y", pos.getY());
+                    location.addProperty("z", pos.getZ());
+                    deathEvent.add("death_location", location);
+                }
                 
                 addPlayerEvent(deathEvent);
-                
-                // Update player stats
-                updatePlayerDeathStats(playerUuid);
-                
-                LOGGER.info("Player death tracked: " + playerName);
+                invalidateCache();
             }
         } catch (Exception e) {
             LOGGER.log(Level.WARNING, "Error tracking player death", e);
@@ -159,301 +202,216 @@ public class PlayerEventTracker {
     }
     
     /**
-     * Handles player achievement event
-     * TODO: Add @SubscribeEvent annotation when Forge APIs are available
+     * Handles advancement/achievement events
      */
-    // @SubscribeEvent
-    public void onPlayerAchievement(Object event) {
+    @SubscribeEvent
+    public void onAdvancement(AdvancementEvent event) {
         try {
-            // TODO: Extract achievement data when AdvancementEvent is available
+            Player player = event.getEntity();
+            String playerName = player.getName().getString();
+            String playerUUID = player.getUUID().toString();
             
-            // Simulate achievement tracking
-            if (!playerData.isEmpty()) {
-                String playerUuid = playerData.keySet().iterator().next();
-                JsonObject player = playerData.get(playerUuid);
-                String playerName = player.get("name").getAsString();
-                
-                JsonObject achievementEvent = new JsonObject();
-                achievementEvent.addProperty("type", "player_achievement");
-                achievementEvent.addProperty("timestamp", System.currentTimeMillis());
-                achievementEvent.addProperty("player_uuid", playerUuid);
-                achievementEvent.addProperty("player_name", playerName);
-                achievementEvent.addProperty("achievement", "test_achievement");
-                achievementEvent.addProperty("achievement_title", "Test Achievement");
-                
-                addPlayerEvent(achievementEvent);
-                
-                LOGGER.info("Player achievement tracked: " + playerName);
-            }
+            ResourceLocation advancementId = event.getAdvancement().getId();
+            
+            LOGGER.info("Player advancement: " + playerName + " - " + advancementId);
+            
+            // Track advancement event
+            JsonObject advancementEvent = new JsonObject();
+            advancementEvent.addProperty("type", "player_advancement");
+            advancementEvent.addProperty("timestamp", System.currentTimeMillis());
+            advancementEvent.addProperty("player_uuid", playerUUID);
+            advancementEvent.addProperty("player_name", playerName);
+            advancementEvent.addProperty("advancement_id", advancementId.toString());
+            
+            addPlayerEvent(advancementEvent);
+            invalidateCache();
+            
         } catch (Exception e) {
-            LOGGER.log(Level.WARNING, "Error tracking player achievement", e);
+            LOGGER.log(Level.WARNING, "Error tracking player advancement", e);
         }
     }
     
     /**
-     * Create comprehensive player data
+     * Updates player inventory data
      */
-    private JsonObject createPlayerData(String uuid, String name) {
-        JsonObject player = new JsonObject();
-        player.addProperty("uuid", uuid);
-        player.addProperty("name", name);
-        player.addProperty("display_name", name);
-        player.addProperty("join_time", System.currentTimeMillis());
-        player.addProperty("last_seen", System.currentTimeMillis());
-        player.addProperty("ip_address", "127.0.0.1"); // Simulated
-        player.addProperty("online", true);
-        
-        // Health and status
-        JsonObject health = new JsonObject();
-        health.addProperty("health", 20.0);
-        health.addProperty("max_health", 20.0);
-        health.addProperty("food_level", 20);
-        health.addProperty("saturation", 5.0f);
-        health.addProperty("experience_level", 0);
-        health.addProperty("experience_total", 0);
-        player.add("health_status", health);
-        
-        // Location
-        JsonObject location = new JsonObject();
-        location.addProperty("world", "minecraft:overworld");
-        location.addProperty("x", 0.0);
-        location.addProperty("y", 64.0);
-        location.addProperty("z", 0.0);
-        location.addProperty("yaw", 0.0f);
-        location.addProperty("pitch", 0.0f);
-        player.add("location", location);
-        
-        // Game mode and permissions
-        player.addProperty("game_mode", "SURVIVAL");
-        player.addProperty("permission_level", 0);
-        player.addProperty("is_op", false);
-        
-        // Initialize stats
-        initializePlayerStats(uuid);
-        initializePlayerInventory(uuid);
-        
-        return player;
-    }
-    
-    /**
-     * Initialize player statistics
-     */
-    private void initializePlayerStats(String uuid) {
-        JsonObject stats = new JsonObject();
-        stats.addProperty("timestamp", System.currentTimeMillis());
-        stats.addProperty("player_uuid", uuid);
-        
-        // Basic stats
-        stats.addProperty("play_time", 0);
-        stats.addProperty("deaths", 0);
-        stats.addProperty("kills", 0);
-        stats.addProperty("blocks_broken", 0);
-        stats.addProperty("blocks_placed", 0);
-        stats.addProperty("distance_walked", 0.0);
-        stats.addProperty("distance_flown", 0.0);
-        stats.addProperty("jumps", 0);
-        
-        // Advanced stats
-        JsonObject advanced = new JsonObject();
-        advanced.addProperty("items_crafted", 0);
-        advanced.addProperty("items_used", 0);
-        advanced.addProperty("items_picked_up", 0);
-        advanced.addProperty("items_dropped", 0);
-        advanced.addProperty("damage_dealt", 0.0);
-        advanced.addProperty("damage_taken", 0.0);
-        stats.add("advanced_stats", advanced);
-        
-        playerStats.put(uuid, stats);
-    }
-    
-    /**
-     * Initialize player inventory
-     */
-    private void initializePlayerInventory(String uuid) {
-        JsonObject inventory = new JsonObject();
-        inventory.addProperty("timestamp", System.currentTimeMillis());
-        inventory.addProperty("player_uuid", uuid);
-        
-        // Main inventory slots (0-35)
-        JsonArray mainInventory = new JsonArray();
-        for (int i = 0; i < 36; i++) {
-            JsonObject slot = new JsonObject();
-            slot.addProperty("slot", i);
-            slot.addProperty("item", "minecraft:air");
-            slot.addProperty("count", 0);
-            slot.addProperty("nbt", "{}");
-            mainInventory.add(slot);
-        }
-        inventory.add("main_inventory", mainInventory);
-        
-        // Armor slots
-        JsonArray armor = new JsonArray();
-        String[] armorSlots = {"helmet", "chestplate", "leggings", "boots"};
-        for (int i = 0; i < 4; i++) {
-            JsonObject slot = new JsonObject();
-            slot.addProperty("slot", armorSlots[i]);
-            slot.addProperty("item", "minecraft:air");
-            slot.addProperty("count", 0);
-            slot.addProperty("nbt", "{}");
-            armor.add(slot);
-        }
-        inventory.add("armor", armor);
-        
-        // Offhand slot
-        JsonObject offhand = new JsonObject();
-        offhand.addProperty("item", "minecraft:air");
-        offhand.addProperty("count", 0);
-        offhand.addProperty("nbt", "{}");
-        inventory.add("offhand", offhand);
-        
-        playerInventories.put(uuid, inventory);
-    }
-    
-    /**
-     * Start tracking a specific player
-     */
-    private void startPlayerTracking(String uuid) {
-        // TODO: Set up periodic data collection for this player
-        // This would include updating location, health, inventory, etc.
-        LOGGER.info("Started tracking player: " + uuid);
-    }
-    
-    /**
-     * Update player death statistics
-     */
-    private void updatePlayerDeathStats(String uuid) {
-        JsonObject stats = playerStats.get(uuid);
-        if (stats != null) {
-            int deaths = stats.get("deaths").getAsInt();
-            stats.addProperty("deaths", deaths + 1);
-            stats.addProperty("timestamp", System.currentTimeMillis());
+    private void updatePlayerInventory(ServerPlayer player) {
+        try {
+            String playerUUID = player.getUUID().toString();
+            
+            JsonObject inventory = new JsonObject();
+            JsonArray mainInventory = new JsonArray();
+            JsonArray armor = new JsonArray();
+            JsonObject offhand = new JsonObject();
+            
+            // Main inventory (36 slots)
+            for (int i = 0; i < 36; i++) {
+                ItemStack item = player.getInventory().getItem(i);
+                JsonObject slot = new JsonObject();
+                slot.addProperty("slot", i);
+                if (!item.isEmpty()) {
+                    slot.addProperty("item", item.getItem().toString());
+                    slot.addProperty("count", item.getCount());
+                    slot.addProperty("display_name", item.getDisplayName().getString());
+                } else {
+                    slot.addProperty("item", "minecraft:air");
+                    slot.addProperty("count", 0);
+                }
+                mainInventory.add(slot);
+            }
+            
+            // Armor slots (4 slots)
+            for (int i = 0; i < 4; i++) {
+                ItemStack item = player.getInventory().getArmor(i);
+                JsonObject slot = new JsonObject();
+                slot.addProperty("slot", i);
+                if (!item.isEmpty()) {
+                    slot.addProperty("item", item.getItem().toString());
+                    slot.addProperty("count", item.getCount());
+                    slot.addProperty("display_name", item.getDisplayName().getString());
+                } else {
+                    slot.addProperty("item", "minecraft:air");
+                    slot.addProperty("count", 0);
+                }
+                armor.add(slot);
+            }
+            
+            // Offhand slot
+            ItemStack offhandItem = player.getOffhandItem();
+            if (!offhandItem.isEmpty()) {
+                offhand.addProperty("item", offhandItem.getItem().toString());
+                offhand.addProperty("count", offhandItem.getCount());
+                offhand.addProperty("display_name", offhandItem.getDisplayName().getString());
+            } else {
+                offhand.addProperty("item", "minecraft:air");
+                offhand.addProperty("count", 0);
+            }
+            
+            inventory.add("main_inventory", mainInventory);
+            inventory.add("armor", armor);
+            inventory.add("offhand", offhand);
+            inventory.addProperty("last_updated", System.currentTimeMillis());
+            
+            playerInventories.put(playerUUID, inventory);
+            
+        } catch (Exception e) {
+            LOGGER.log(Level.WARNING, "Error updating player inventory", e);
         }
     }
     
     /**
-     * Add a player event to the storage
+     * Add a player event to the queue with size limit
      */
     private void addPlayerEvent(JsonObject event) {
-        playerEvents.offer(event);
+        playerEvents.add(event);
         
-        // Keep only the most recent events
+        // Maintain size limit
         while (playerEvents.size() > MAX_PLAYER_EVENTS) {
             playerEvents.poll();
         }
     }
     
     /**
-     * Get comprehensive player data for API responses
-     * Returns real-time online status and separates online players from all players
+     * Invalidate cached data to force refresh
      */
-    public JsonObject getPlayerData() {
+    private void invalidateCache() {
+        cachedPlayerData = null;
+        lastDataUpdate = 0;
+    }
+    
+    /**
+     * Get all player data with caching
+     */
+    public JsonObject getAllPlayerData() {
         long currentTime = System.currentTimeMillis();
-        
-        // Use cache if data is fresh
         if (cachedPlayerData != null && (currentTime - lastDataUpdate) < CACHE_DURATION_MS) {
             return cachedPlayerData;
         }
         
         JsonObject data = new JsonObject();
-        data.addProperty("timestamp", currentTime);
+        
+        // Online players count
         data.addProperty("online_count", onlinePlayers.size());
         
-        // Convert player data to arrays
-        JsonArray onlinePlayersArray = new JsonArray();
-        JsonArray allPlayersArray = new JsonArray();
-        JsonArray playerStatsList = new JsonArray();
-        JsonArray playerInventoriesList = new JsonArray();
-        
-        for (Map.Entry<String, JsonObject> entry : playerData.entrySet()) {
-            String uuid = entry.getKey();
-            JsonObject player = entry.getValue();
-            
-            // Update online status based on onlinePlayers set
-            boolean isOnline = onlinePlayers.contains(uuid);
-            player.addProperty("online", isOnline);
-            
-            // Add to all players list
-            allPlayersArray.add(player);
-            
-            // Add to online players list only if currently online
-            if (isOnline) {
-                onlinePlayersArray.add(player);
-            }
+        // All players
+        JsonArray players = new JsonArray();
+        for (JsonObject player : playerData.values()) {
+            players.add(player);
         }
-        
-        for (JsonObject stats : playerStats.values()) {
-            playerStatsList.add(stats);
-        }
-        
-        for (JsonObject inventory : playerInventories.values()) {
-            playerInventoriesList.add(inventory);
-        }
-        
-        // Return only currently online players in the main list for API compatibility
-        data.add("online_players", onlinePlayersArray);
-        data.add("all_players", allPlayersArray); // For historical data
-        data.add("player_stats", playerStatsList);
-        data.add("player_inventories", playerInventoriesList);
+        data.add("players", players);
         
         // Recent events
-        JsonArray recentEvents = new JsonArray();
-        Object[] events = playerEvents.toArray();
-        for (int i = Math.max(0, events.length - 50); i < events.length; i++) {
-            recentEvents.add((JsonObject) events[i]);
+        JsonArray events = new JsonArray();
+        for (JsonObject event : playerEvents) {
+            events.add(event);
         }
-        data.add("recent_events", recentEvents);
+        data.add("recent_events", events);
+        
+        // Player inventories
+        JsonObject inventories = new JsonObject();
+        for (Map.Entry<String, JsonObject> entry : playerInventories.entrySet()) {
+            inventories.add(entry.getKey(), entry.getValue());
+        }
+        data.add("inventories", inventories);
+        
+        // Player stats
+        JsonObject stats = new JsonObject();
+        for (Map.Entry<String, JsonObject> entry : playerStats.entrySet()) {
+            stats.add(entry.getKey(), entry.getValue());
+        }
+        data.add("stats", stats);
+        
+        data.addProperty("last_updated", currentTime);
         
         cachedPlayerData = data;
         lastDataUpdate = currentTime;
+        
         return data;
     }
     
     /**
-     * Force refresh of cached data
+     * Get detailed player data for a specific player
      */
-    public void refreshData() {
-        lastDataUpdate = 0;
-        cachedPlayerData = null;
-    }
-    
-    /**
-     * Get player by UUID
-     */
-    public JsonObject getPlayer(String uuid) {
-        return playerData.get(uuid);
-    }
-    
-    /**
-     * Get player stats by UUID
-     */
-    public JsonObject getPlayerStats(String uuid) {
-        return playerStats.get(uuid);
-    }
-    
-    /**
-     * Get player inventory by UUID
-     */
-    public JsonObject getPlayerInventory(String uuid) {
-        return playerInventories.get(uuid);
-    }
-    
-    /**
-     * Get recent player events
-     */
-    public JsonArray getRecentEvents(int limit) {
-        JsonArray events = new JsonArray();
-        Object[] eventArray = playerEvents.toArray();
-        int start = Math.max(0, eventArray.length - limit);
+    public JsonObject getPlayerData(String playerUUID) {
+        JsonObject data = new JsonObject();
         
-        for (int i = start; i < eventArray.length; i++) {
-            events.add((JsonObject) eventArray[i]);
+        if (playerData.containsKey(playerUUID)) {
+            data.add("player", playerData.get(playerUUID));
         }
         
-        return events;
+        if (playerInventories.containsKey(playerUUID)) {
+            data.add("inventory", playerInventories.get(playerUUID));
+        }
+        
+        if (playerStats.containsKey(playerUUID)) {
+            data.add("stats", playerStats.get(playerUUID));
+        }
+        
+        return data;
     }
     
     /**
-     * Get the count of currently online players
+     * Get online players list
+     */
+    public JsonArray getOnlinePlayers() {
+        JsonArray online = new JsonArray();
+        for (String uuid : onlinePlayers) {
+            if (playerData.containsKey(uuid)) {
+                online.add(playerData.get(uuid));
+            }
+        }
+        return online;
+    }
+    
+    /**
+     * Refresh cached data
+     */
+    public void refreshData() {
+        invalidateCache();
+        getAllPlayerData(); // This will rebuild the cache
+    }
+    
+    /**
+     * Get current online player count
      */
     public int getOnlinePlayerCount() {
         return onlinePlayers.size();
