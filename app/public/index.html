@@ -1172,104 +1172,169 @@
           <span class="small muted">Last update: ${new Date(status.last_update).toLocaleTimeString()}</span>
         `;
         
-        // Load summary data
-        const summary = await jget('/api/mc-data/summary');
-        if (summary.available) {
-          // Update server overview
-          $('#mcOnlinePlayers').textContent = `${summary.players.online}/${summary.players.max}`;
-          $('#mcTPS').textContent = summary.performance.tps.toFixed(1);
-          $('#mcMemoryUsage').textContent = summary.performance.memory_usage.toFixed(1) + '%';
-          $('#mcWorldTime').textContent = summary.world.time || '—';
-          
-          // Update world status  
-          $('#mcWeather').textContent = summary.world.weather.thundering ? 'Thundering' : 
-                                       summary.world.weather.raining ? 'Raining' : 'Clear';
-          $('#mcIsDay').textContent = summary.world.is_day ? 'Day' : 'Night';
+        // Load summary data with error handling
+        try {
+          const summary = await jget('/api/mc-data/summary');
+          if (summary && summary.available) {
+            // Update server overview
+            $('#mcOnlinePlayers').textContent = `${summary.players?.online || 0}/${summary.players?.max || 0}`;
+            $('#mcTPS').textContent = (summary.performance?.tps || 0).toFixed(1);
+            $('#mcMemoryUsage').textContent = (summary.performance?.memory_usage || 0).toFixed(1) + '%';
+            $('#mcWorldTime').textContent = summary.world?.time || '—';
+            
+            // Update world status  
+            const weather = summary.world?.weather || {};
+            $('#mcWeather').textContent = weather.thundering ? 'Thundering' : 
+                                         weather.raining ? 'Raining' : 'Clear';
+            $('#mcIsDay').textContent = summary.world?.is_day ? 'Day' : 'Night';
+          } else {
+            // Handle case where summary is not available
+            $('#mcOnlinePlayers').textContent = '—';
+            $('#mcTPS').textContent = '—';
+            $('#mcMemoryUsage').textContent = '—';
+            $('#mcWorldTime').textContent = '—';
+            $('#mcWeather').textContent = '—';
+            $('#mcIsDay').textContent = '—';
+          }
+        } catch (e) {
+          console.warn('Failed to load MC summary data:', e);
+          $('#mcOnlinePlayers').textContent = '—';
+          $('#mcTPS').textContent = '—';
+          $('#mcMemoryUsage').textContent = '—';
+          $('#mcWorldTime').textContent = '—';
+          $('#mcWeather').textContent = '—';
+          $('#mcIsDay').textContent = '—';
         }
         
-        // Load detailed player data
-        const playerData = await jget('/api/mc-data/players');
-        let playersHtml = '<div class="grid cols-1">';
-        if (playerData.players && playerData.players.length > 0) {
-          playerData.players.forEach(player => {
-            playersHtml += `
-              <div class="card" style="margin-bottom: 10px; padding: 12px;">
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                  <div>
-                    <strong>${player.name}</strong>
-                    <div class="small muted">${player.location.dimension} (${player.location.x}, ${player.location.y}, ${player.location.z})</div>
+        // Load detailed player data with error handling
+        try {
+          const playerData = await jget('/api/mc-data/players');
+          let playersHtml = '<div class="grid cols-1">';
+          if (playerData?.players && playerData.players.length > 0) {
+            playerData.players.forEach(player => {
+              const location = player.location || {};
+              const status = player.status || {};
+              playersHtml += `
+                <div class="card" style="margin-bottom: 10px; padding: 12px;">
+                  <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                      <strong>${player.name || '—'}</strong>
+                      <div class="small muted">${location.dimension || '—'} (${location.x || 0}, ${location.y || 0}, ${location.z || 0})</div>
+                    </div>
+                    <div style="text-align: right;">
+                      <div class="tag">${(status.health || 0).toFixed(1)}♥</div>
+                      <div class="small muted">Ping: ${status.ping || 0}ms</div>
+                    </div>
                   </div>
-                  <div style="text-align: right;">
-                    <div class="tag">${player.status.health.toFixed(1)}♥</div>
-                    <div class="small muted">Ping: ${player.status.ping}ms</div>
+                  <div class="small" style="margin-top: 8px;">
+                    Level ${status.experience_level || 0} • ${status.game_mode || 'unknown'}
+                    ${status.afk ? ' • <span class="tag warn">AFK</span>' : ''}
                   </div>
                 </div>
-                <div class="small" style="margin-top: 8px;">
-                  Level ${player.status.experience_level} • ${player.status.game_mode}
-                  ${player.status.afk ? ' • <span class="tag warn">AFK</span>' : ''}
+              `;
+            });
+          } else {
+            playersHtml += '<div class="small muted">No players online</div>';
+          }
+          playersHtml += '</div>';
+          $('#mcPlayersList').innerHTML = playersHtml;
+        } catch (e) {
+          console.warn('Failed to load MC player data:', e);
+          $('#mcPlayersList').innerHTML = '<div class="small muted">Failed to load player data</div>';
+        }
+        
+        // Load performance data with error handling
+        try {
+          const perfData = await jget('/api/mc-data/performance');
+          if (perfData) {
+            const memory = perfData.memory || {};
+            const threads = perfData.threads || {};
+            const ticks = perfData.ticks || {};
+            const cpu = perfData.cpu || {};
+            
+            $('#mcPerformanceMetrics').innerHTML = `
+              <div class="grid cols-2">
+                <div class="metric-box">
+                  <div class="metric-value">${(memory.heap_usage_percent || 0).toFixed(1)}%</div>
+                  <div class="metric-label">Heap Memory</div>
+                </div>
+                <div class="metric-box">
+                  <div class="metric-value">${threads.thread_count || '—'}</div>
+                  <div class="metric-label">Threads</div>
+                </div>
+                <div class="metric-box">
+                  <div class="metric-value">${(ticks.average_tick_time_ms || 0).toFixed(1)}ms</div>
+                  <div class="metric-label">Avg Tick Time</div>
+                </div>
+                <div class="metric-box">
+                  <div class="metric-value">${cpu.available_processors || '—'}</div>
+                  <div class="metric-label">CPU Cores</div>
                 </div>
               </div>
             `;
-          });
-        } else {
-          playersHtml += '<div class="small muted">No players online</div>';
-        }
-        playersHtml += '</div>';
-        $('#mcPlayersList').innerHTML = playersHtml;
-        
-        // Load performance data
-        const perfData = await jget('/api/mc-data/performance');
-        $('#mcPerformanceMetrics').innerHTML = `
-          <div class="grid cols-2">
-            <div class="metric-box">
-              <div class="metric-value">${(perfData.memory.heap_usage_percent || 0).toFixed(1)}%</div>
-              <div class="metric-label">Heap Memory</div>
-            </div>
-            <div class="metric-box">
-              <div class="metric-value">${perfData.threads.thread_count || '—'}</div>
-              <div class="metric-label">Threads</div>
-            </div>
-            <div class="metric-box">
-              <div class="metric-value">${(perfData.ticks.average_tick_time_ms || 0).toFixed(1)}ms</div>
-              <div class="metric-label">Avg Tick Time</div>
-            </div>
-            <div class="metric-box">
-              <div class="metric-value">${perfData.cpu.available_processors || '—'}</div>
-              <div class="metric-label">CPU Cores</div>
-            </div>
-          </div>
-        `;
-        
-        // Load mod data
-        const modData = await jget('/api/mc-data/mods');
-        let modsHtml = `<div class="small muted">Total mods: ${modData.total_mods || 0}</div>`;
-        if (modData.mods && modData.mods.length > 0) {
-          modsHtml += '<div style="margin-top: 10px;">';
-          modData.mods.slice(0, 5).forEach(mod => {
-            modsHtml += `<div class="tag" style="margin: 2px;">${mod.display_name} ${mod.version}</div>`;
-          });
-          if (modData.mods.length > 5) {
-            modsHtml += `<div class="small muted" style="margin-top: 5px;">...and ${modData.mods.length - 5} more</div>`;
           }
-          modsHtml += '</div>';
+        } catch (e) {
+          console.warn('Failed to load MC performance data:', e);
+          $('#mcPerformanceMetrics').innerHTML = '<div class="small muted">Failed to load performance data</div>';
         }
-        $('#mcModsList').innerHTML = modsHtml;
         
-        // Load world data
-        const worldData = await jget('/api/mc-data/world');
-        if (worldData.worlds && worldData.worlds.length > 0) {
-          const world = worldData.worlds[0];
-          $('#mcLoadedChunks').textContent = world.chunks.loaded || '—';
-          $('#mcTotalEntities').textContent = world.entities.total || '—';
+        // Load mod data with error handling
+        try {
+          const modData = await jget('/api/mc-data/mods');
+          let modsHtml = `<div class="small muted">Total mods: ${modData?.total_mods || 0}</div>`;
+          if (modData?.mods && modData.mods.length > 0) {
+            modsHtml += '<div style="margin-top: 10px;">';
+            modData.mods.slice(0, 5).forEach(mod => {
+              modsHtml += `<div class="tag" style="margin: 2px;">${mod.name || mod.mod_id || 'Unknown'} ${mod.version || ''}</div>`;
+            });
+            if (modData.mods.length > 5) {
+              modsHtml += `<div class="small muted" style="margin-top: 5px;">...and ${modData.mods.length - 5} more</div>`;
+            }
+            modsHtml += '</div>';
+          }
+          $('#mcModsList').innerHTML = modsHtml;
+        } catch (e) {
+          console.warn('Failed to load MC mod data:', e);
+          $('#mcModsList').innerHTML = '<div class="small muted">Failed to load mod data</div>';
         }
-        $('#mcGameRules').textContent = Object.keys(worldData.game_rules || {}).length;
         
-        // Load security data
-        const securityData = await jget('/api/mc-data/security');
-        $('#mcOperators').textContent = securityData.operators.count || 0;
-        $('#mcWhitelistEnabled').textContent = securityData.whitelist.enabled ? 'Enabled' : 'Disabled';
-        $('#mcBannedPlayers').textContent = securityData.banned_players.count || 0;
-        $('#mcBannedIPs').textContent = securityData.banned_ips.count || 0;
+        // Load world data with error handling
+        try {
+          const worldData = await jget('/api/mc-data/world');
+          if (worldData?.worlds && worldData.worlds.length > 0) {
+            const world = worldData.worlds[0];
+            // Fix: API returns loaded_chunks and entities directly, not nested objects
+            $('#mcLoadedChunks').textContent = world.loaded_chunks || '—';
+            $('#mcTotalEntities').textContent = world.entities || '—';
+            $('#mcGameRules').textContent = Object.keys(worldData.game_rules || {}).length;
+          } else {
+            $('#mcLoadedChunks').textContent = '—';
+            $('#mcTotalEntities').textContent = '—';
+            $('#mcGameRules').textContent = '—';
+          }
+        } catch (e) {
+          console.warn('Failed to load MC world data:', e);
+          $('#mcLoadedChunks').textContent = '—';
+          $('#mcTotalEntities').textContent = '—';
+          $('#mcGameRules').textContent = '—';
+        }
+        
+        // Load security data with error handling
+        try {
+          const securityData = await jget('/api/mc-data/security');
+          if (securityData) {
+            $('#mcOperators').textContent = securityData.operators?.count || '—';
+            $('#mcWhitelistEnabled').textContent = securityData.whitelist?.enabled ? 'Enabled' : 'Disabled';
+            $('#mcBannedPlayers').textContent = securityData.banned_players?.count || '—';
+            $('#mcBannedIPs').textContent = securityData.banned_ips?.count || '—';
+          }
+        } catch (e) {
+          console.warn('Failed to load MC security data:', e);
+          $('#mcOperators').textContent = '—';
+          $('#mcWhitelistEnabled').textContent = '—';
+          $('#mcBannedPlayers').textContent = '—';
+          $('#mcBannedIPs').textContent = '—';
+        }
         
       } catch (error) {
         console.error('Failed to load MC data:', error);
@@ -1277,9 +1342,24 @@
           <div class="tag danger">Disconnected</div>
           <div class="small muted">MC Data Collector is not available</div>
         `;
+        
+        // Reset all fields to fallback values
+        $('#mcOnlinePlayers').textContent = '—';
+        $('#mcTPS').textContent = '—';
+        $('#mcMemoryUsage').textContent = '—';
+        $('#mcWorldTime').textContent = '—';
+        $('#mcWeather').textContent = '—';
+        $('#mcIsDay').textContent = '—';
         $('#mcPlayersList').innerHTML = '<div class="small muted">Data not available</div>';
         $('#mcPerformanceMetrics').innerHTML = '<div class="small muted">Data not available</div>';
         $('#mcModsList').innerHTML = '<div class="small muted">Data not available</div>';
+        $('#mcLoadedChunks').textContent = '—';
+        $('#mcTotalEntities').textContent = '—';
+        $('#mcGameRules').textContent = '—';
+        $('#mcOperators').textContent = '—';
+        $('#mcWhitelistEnabled').textContent = '—';
+        $('#mcBannedPlayers').textContent = '—';
+        $('#mcBannedIPs').textContent = '—';
       }
     }
 
