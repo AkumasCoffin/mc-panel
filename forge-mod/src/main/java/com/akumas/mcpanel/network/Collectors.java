@@ -31,6 +31,7 @@ public class Collectors {
     
     /**
      * Collects comprehensive live player data from the Minecraft server
+     * Now includes real-time online/offline status tracking
      */
     public static JsonObject collectPlayerData() {
         long currentTime = System.currentTimeMillis();
@@ -48,9 +49,10 @@ public class Collectors {
             if (MCPanelMod.getPlayerTracker() != null) {
                 JsonObject playerTrackerData = MCPanelMod.getPlayerTracker().getPlayerData();
                 
-                // Extract key information
+                // Extract key information with real-time online status
                 data.addProperty("online_count", playerTrackerData.get("online_count").getAsInt());
-                data.add("players", playerTrackerData.get("online_players"));
+                data.add("players", playerTrackerData.get("online_players")); // Only currently online players
+                data.add("all_players", playerTrackerData.get("all_players")); // All players with online status
                 data.add("player_stats", playerTrackerData.get("player_stats"));
                 data.add("player_inventories", playerTrackerData.get("player_inventories"));
                 data.add("recent_events", playerTrackerData.get("recent_events"));
@@ -63,6 +65,7 @@ public class Collectors {
                 data.addProperty("online_count", 0);
                 data.addProperty("max_players", 20);
                 data.add("players", new JsonArray());
+                data.add("all_players", new JsonArray());
                 data.add("player_stats", new JsonArray());
                 data.add("player_inventories", new JsonArray());
                 data.add("recent_events", new JsonArray());
@@ -86,6 +89,7 @@ public class Collectors {
             data.addProperty("online_count", 0);
             data.addProperty("max_players", 20);
             data.add("players", new JsonArray());
+            data.add("all_players", new JsonArray());
         }
         
         cachedPlayerData = data;

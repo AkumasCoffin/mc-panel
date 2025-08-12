@@ -7,11 +7,13 @@ import java.util.logging.Level;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
  * Tracks player-specific events and maintains detailed player data.
  * Provides comprehensive player monitoring including inventories, stats, locations, health, etc.
+ * Tracks real-time online/offline status of players for accurate dashboard display.
  */
 public class PlayerEventTracker {
     private static final Logger LOGGER = Logger.getLogger(PlayerEventTracker.class.getName());
@@ -22,6 +24,9 @@ public class PlayerEventTracker {
     private final Map<String, JsonObject> playerInventories = new ConcurrentHashMap<>();
     private final Map<String, JsonObject> playerLocations = new ConcurrentHashMap<>();
     private final ConcurrentLinkedQueue<JsonObject> playerEvents = new ConcurrentLinkedQueue<>();
+    
+    // Track currently online players for real-time status
+    private final Set<String> onlinePlayers = ConcurrentHashMap.newKeySet();
     
     private static final int MAX_PLAYER_EVENTS = 500;
     
@@ -36,6 +41,7 @@ public class PlayerEventTracker {
     
     /**
      * Handles player join event
+     * Adds player to online tracking set and creates player data
      * TODO: Add @SubscribeEvent annotation when Forge APIs are available
      */
     // @SubscribeEvent
@@ -48,6 +54,9 @@ public class PlayerEventTracker {
             // For now, simulate player join
             String playerUuid = UUID.randomUUID().toString();
             String playerName = "TestPlayer_" + System.currentTimeMillis() % 1000;
+            
+            // Add player to online set for real-time tracking
+            onlinePlayers.add(playerUuid);
             
             // Create player data
             JsonObject player = createPlayerData(playerUuid, playerName);
@@ -66,7 +75,7 @@ public class PlayerEventTracker {
             // Start tracking this player
             startPlayerTracking(playerUuid);
             
-            LOGGER.info("Player join tracked: " + playerName);
+            LOGGER.info("Player join tracked: " + playerName + " (UUID: " + playerUuid + ")");
             refreshData();
         } catch (Exception e) {
             LOGGER.log(Level.WARNING, "Error tracking player join", e);
@@ -75,6 +84,7 @@ public class PlayerEventTracker {
     
     /**
      * Handles player leave event
+     * Removes player from online tracking set but keeps historical data
      * TODO: Add @SubscribeEvent annotation when Forge APIs are available
      */
     // @SubscribeEvent
@@ -82,11 +92,18 @@ public class PlayerEventTracker {
         try {
             // TODO: Extract player data when PlayerEvent.PlayerLoggedOutEvent is available
             
-            // For now, simulate player leave for existing players
-            if (!playerData.isEmpty()) {
-                String playerUuid = playerData.keySet().iterator().next();
+            // For now, simulate player leave for existing online players
+            if (!onlinePlayers.isEmpty()) {
+                String playerUuid = onlinePlayers.iterator().next();
                 JsonObject player = playerData.get(playerUuid);
                 String playerName = player.get("name").getAsString();
+                
+                // Remove player from online set (but keep their data for history)
+                onlinePlayers.remove(playerUuid);
+                
+                // Update player's online status in their data
+                player.addProperty("online", false);
+                player.addProperty("last_seen", System.currentTimeMillis());
                 
                 // Track leave event
                 JsonObject leaveEvent = new JsonObject();
@@ -98,13 +115,7 @@ public class PlayerEventTracker {
                 
                 addPlayerEvent(leaveEvent);
                 
-                // Remove player data
-                playerData.remove(playerUuid);
-                playerStats.remove(playerUuid);
-                playerInventories.remove(playerUuid);
-                playerLocations.remove(playerUuid);
-                
-                LOGGER.info("Player leave tracked: " + playerName);
+                LOGGER.info("Player leave tracked: " + playerName + " (UUID: " + playerUuid + ")");
                 refreshData();
             }
         } catch (Exception e) {
@@ -333,6 +344,7 @@ public class PlayerEventTracker {
     
     /**
      * Get comprehensive player data for API responses
+     * Returns real-time online status and separates online players from all players
      */
     public JsonObject getPlayerData() {
         long currentTime = System.currentTimeMillis();
@@ -344,15 +356,29 @@ public class PlayerEventTracker {
         
         JsonObject data = new JsonObject();
         data.addProperty("timestamp", currentTime);
-        data.addProperty("online_count", playerData.size());
+        data.addProperty("online_count", onlinePlayers.size());
         
         // Convert player data to arrays
-        JsonArray onlinePlayers = new JsonArray();
+        JsonArray onlinePlayersArray = new JsonArray();
+        JsonArray allPlayersArray = new JsonArray();
         JsonArray playerStatsList = new JsonArray();
         JsonArray playerInventoriesList = new JsonArray();
         
-        for (JsonObject player : playerData.values()) {
-            onlinePlayers.add(player);
+        for (Map.Entry<String, JsonObject> entry : playerData.entrySet()) {
+            String uuid = entry.getKey();
+            JsonObject player = entry.getValue();
+            
+            // Update online status based on onlinePlayers set
+            boolean isOnline = onlinePlayers.contains(uuid);
+            player.addProperty("online", isOnline);
+            
+            // Add to all players list
+            allPlayersArray.add(player);
+            
+            // Add to online players list only if currently online
+            if (isOnline) {
+                onlinePlayersArray.add(player);
+            }
         }
         
         for (JsonObject stats : playerStats.values()) {
@@ -363,7 +389,9 @@ public class PlayerEventTracker {
             playerInventoriesList.add(inventory);
         }
         
-        data.add("online_players", onlinePlayers);
+        // Return only currently online players in the main list for API compatibility
+        data.add("online_players", onlinePlayersArray);
+        data.add("all_players", allPlayersArray); // For historical data
         data.add("player_stats", playerStatsList);
         data.add("player_inventories", playerInventoriesList);
         
@@ -422,5 +450,26 @@ public class PlayerEventTracker {
         }
         
         return events;
+    }
+    
+    /**
+     * Get the count of currently online players
+     */
+    public int getOnlinePlayerCount() {
+        return onlinePlayers.size();
+    }
+    
+    /**
+     * Check if a player is currently online
+     */
+    public boolean isPlayerOnline(String uuid) {
+        return onlinePlayers.contains(uuid);
+    }
+    
+    /**
+     * Get list of currently online player UUIDs
+     */
+    public Set<String> getOnlinePlayerUuids() {
+        return new java.util.HashSet<>(onlinePlayers);
     }
 }
