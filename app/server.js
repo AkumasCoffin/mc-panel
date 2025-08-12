@@ -15,9 +15,7 @@ try { require('dotenv').config({ path: path.join(__dirname, '.env') }); } catch 
 const { db, run, get, all, initSchema } = require('./db');
 const importer = require('./log_importer');
 const { sendRconCommand, rconEnabled } = require('./rcon');
-const SystemMonitor = require('./system_monitor');
 const FileMonitor = require('./file_monitor');
-const Analytics = require('./analytics');
 const McDataClient = require('./mc_data_client');
 
 // ---------- ENV ----------
@@ -36,9 +34,7 @@ const BANNED_PLAYERS_JSON = process.env.BANNED_PLAYERS_JSON || path.join(MC_SERV
 const BANNED_IPS_JSON = process.env.BANNED_IPS_JSON || path.join(MC_SERVER_PATH, 'banned-ips.json');
 
 // Initialize monitoring services
-const systemMonitor = new SystemMonitor();
 const fileMonitor = new FileMonitor(MC_SERVER_PATH);
-const analytics = new Analytics();
 const mcDataClient = new McDataClient();
 
 // ---------- APP ----------
@@ -831,223 +827,6 @@ app.get('/api/audit', requireAuth, async (req, res) => {
 // Health
 app.get('/health', (req, res) => res.json({ ok: true }));
 
-// System monitoring endpoints
-app.get('/api/system/metrics', requireAuth, async (req, res) => {
-  try {
-    const metrics = await systemMonitor.collectMetrics();
-    res.json(metrics);
-  } catch (e) {
-    res.status(500).json({ error: 'Failed to get system metrics' });
-  }
-});
-
-app.get('/api/system/history', requireAuth, async (req, res) => {
-  try {
-    const hours = Math.min(parseInt(req.query.hours) || 24, 168); // Max 7 days
-    const metrics = await all(`
-      SELECT * FROM system_metrics 
-      WHERE recorded_at >= datetime('now', '-${hours} hours')
-      ORDER BY recorded_at ASC
-    `);
-    res.json(metrics);
-  } catch (e) {
-    res.status(500).json({ error: 'Failed to get system history' });
-  }
-});
-
-// Performance monitoring endpoints
-app.get('/api/performance/live', requireAuth, async (req, res) => {
-  try {
-    const metrics = await systemMonitor.collectMetrics();
-    
-    // Try to get Minecraft TPS if available
-    let tps = null;
-    try {
-      if (rconEnabled()) {
-        const tpsResult = await sendRconCommand('forge tps');
-        if (tpsResult) {
-          // Parse TPS from forge response (format varies)
-          // Try multiple TPS command formats for different servers
-          let tpsMatch = tpsResult.match(/(\d+\.?\d*)\s*TPS/i);
-          if (!tpsMatch) {
-            // Try Minecraft vanilla /tps command format
-            tpsMatch = tpsResult.match(/TPS:\s*(\d+\.?\d*)/i);
-          }
-          if (!tpsMatch) {
-            // Try Paper/Spigot format
-            tpsMatch = tpsResult.match(/Overall:\s*(\d+\.?\d*)/i);
-          }
-          if (!tpsMatch) {
-            // Try general number extraction for TPS
-            tpsMatch = tpsResult.match(/(\d+\.\d+)/);
-          }
-          if (tpsMatch) {
-            tps = parseFloat(tpsMatch[1]);
-          }
-        }
-      } else {
-        // Estimate TPS based on system load when RCON unavailable
-        const cpuUsage = metrics.cpu.usage;
-        const loadAvg = metrics.load[1];
-        
-        if (cpuUsage < 20 && loadAvg < 1.0) {
-          tps = 20.0; // Optimal TPS
-        } else if (cpuUsage < 50 && loadAvg < 2.0) {
-          tps = 19.5; // Good TPS
-        } else if (cpuUsage < 80 && loadAvg < 4.0) {
-          tps = 18.0; // Moderate TPS
-        } else {
-          tps = 15.0; // Poor TPS
-        }
-      }
-    } catch (e) {
-      // TPS unavailable, continue without it
-    }
-    
-    res.json({
-      ...metrics,
-      tps: tps,
-      server_status: playersByName.size > 0 ? 'online' : 'unknown'
-    });
-  } catch (e) {
-    res.status(500).json({ error: 'Failed to get live performance data' });
-  }
-});
-
-app.get('/api/performance/history', requireAuth, async (req, res) => {
-  try {
-    const period = req.query.period || '1h';
-    let hours;
-    
-    switch (period) {
-      case '1h': hours = 1; break;
-      case '1d': hours = 24; break;
-      case '7d': hours = 168; break;
-      default: hours = 1; break;
-    }
-    
-    const metrics = await all(`
-      SELECT * FROM system_metrics 
-      WHERE recorded_at >= datetime('now', '-${hours} hours')
-      ORDER BY recorded_at ASC
-    `);
-    
-    // Also get online player history
-    const onlineHistory = await all(`
-      SELECT online_count, at as recorded_at FROM metrics_online 
-      WHERE at >= datetime('now', '-${hours} hours')
-      ORDER BY at ASC
-    `);
-    
-    res.json({
-      system_metrics: metrics,
-      online_history: onlineHistory,
-      period: period
-    });
-  } catch (e) {
-    res.status(500).json({ error: 'Failed to get performance history' });
-  }
-});
-
-// Analytics endpoints
-app.get('/api/analytics/dashboard', requireAuth, async (req, res) => {
-  try {
-    const data = await analytics.getDashboardData();
-    
-    // Update with real-time online player count
-    if (data && data.current_stats) {
-      const online = [...playersByName.values()].filter(p => p.online);
-      data.current_stats.online_players = online.length;
-    }
-    
-    // If no data available, provide sample data for demonstration
-    if (!data || !data.player_trend || data.player_trend.length === 0) {
-      const sampleData = {
-        current_stats: {
-          total_players: [...playersByName.values()].length,
-          online_players: [...playersByName.values()].filter(p => p.online).length,
-          today: {
-            unique_players: Math.floor(Math.random() * 10) + 1,
-            total_sessions: Math.floor(Math.random() * 20) + 1,
-            peak_online: Math.floor(Math.random() * 5) + 1,
-            avg_session_duration: Math.floor(Math.random() * 3600) + 600
-          }
-        },
-        player_trend: Array.from({length: 7}, (_, i) => ({
-          date: new Date(Date.now() - (6-i) * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-          unique_players: Math.floor(Math.random() * 8) + 1,
-          total_sessions: Math.floor(Math.random() * 15) + 1
-        })),
-        recent_activity: [],
-        top_players: Array.from({length: 5}, (_, i) => ({
-          username: `Player${i+1}`,
-          playtime_hours: Math.floor(Math.random() * 100) + 10
-        })),
-        session_distribution: [
-          { duration_bucket: 'Short (0-15min)', count: Math.floor(Math.random() * 10) + 5 },
-          { duration_bucket: 'Medium (15-60min)', count: Math.floor(Math.random() * 8) + 3 },
-          { duration_bucket: 'Long (1h+)', count: Math.floor(Math.random() * 5) + 1 }
-        ],
-        hourly_activity: Array.from({length: 24}, (_, i) => ({
-          hour: i,
-          sessions: Math.floor(Math.random() * 5) + 1
-        })),
-        command_stats: [
-          { command: '/list', usage_count: Math.floor(Math.random() * 50) + 10 },
-          { command: '/tp', usage_count: Math.floor(Math.random() * 30) + 5 },
-          { command: '/home', usage_count: Math.floor(Math.random() * 25) + 5 },
-          { command: '/spawn', usage_count: Math.floor(Math.random() * 20) + 3 }
-        ]
-      };
-      return res.json(sampleData);
-    }
-    
-    res.json(data);
-  } catch (e) {
-    res.status(500).json({ error: 'Failed to get dashboard analytics' });
-  }
-});
-
-app.get('/api/analytics/player-trend', requireAuth, async (req, res) => {
-  try {
-    const days = Math.min(parseInt(req.query.days) || 7, 30);
-    const trend = await analytics.getPlayerActivityTrend(days);
-    res.json(trend);
-  } catch (e) {
-    res.status(500).json({ error: 'Failed to get player trend' });
-  }
-});
-
-app.get('/api/analytics/commands', requireAuth, async (req, res) => {
-  try {
-    const days = Math.min(parseInt(req.query.days) || 7, 30);
-    const stats = await analytics.getCommandStats(days);
-    res.json(stats);
-  } catch (e) {
-    res.status(500).json({ error: 'Failed to get command stats' });
-  }
-});
-
-app.get('/api/analytics/top-players', requireAuth, async (req, res) => {
-  try {
-    const limit = Math.min(parseInt(req.query.limit) || 10, 50);
-    const players = await analytics.getTopPlayersByPlaytime(limit);
-    res.json(players);
-  } catch (e) {
-    res.status(500).json({ error: 'Failed to get top players' });
-  }
-});
-
-app.get('/api/analytics/hourly-activity', requireAuth, async (req, res) => {
-  try {
-    const days = Math.min(parseInt(req.query.days) || 7, 30);
-    const activity = await analytics.getHourlyActivity(days);
-    res.json(activity);
-  } catch (e) {
-    res.status(500).json({ error: 'Failed to get hourly activity' });
-  }
-});
-
 // Enhanced file monitoring endpoints
 app.get('/api/files/stats', requireAuth, async (req, res) => {
   try {
@@ -1121,29 +900,6 @@ app.get('/api/bans/enhanced', requireAuth, async (req, res) => {
   }
 });
 
-// Store system metrics periodically
-async function storeSystemMetrics() {
-  try {
-    const metrics = systemMonitor.getMetrics();
-    if (metrics.timestamp) {
-      await run(`
-        INSERT INTO system_metrics (
-          cpu_usage, cpu_cores, memory_used, memory_total, memory_usage,
-          disk_used, disk_total, disk_usage, network_rx, network_tx,
-          network_rx_rate, network_tx_rate, uptime, load_1, load_5, load_15
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `, [
-        metrics.cpu.usage, metrics.cpu.cores,
-        metrics.memory.used, metrics.memory.total, metrics.memory.usage,
-        metrics.disk.used, metrics.disk.total, metrics.disk.usage,
-        metrics.network.rx, metrics.network.tx, metrics.network.rxRate, metrics.network.txRate,
-        metrics.uptime, metrics.load[1], metrics.load[5], metrics.load[15]
-      ]);
-    }
-  } catch (e) {
-    console.warn('[panel] Failed to store system metrics:', e.message);
-  }
-}
 
 // Store online player count for performance tracking  
 async function storeOnlineMetrics() {
@@ -1158,7 +914,6 @@ async function storeOnlineMetrics() {
 // Cleanup old metrics (keep only last 7 days)
 async function cleanupOldMetrics() {
   try {
-    await run("DELETE FROM system_metrics WHERE recorded_at < datetime('now', '-7 days')");
     await run("DELETE FROM metrics_online WHERE at < datetime('now', '-7 days')");
   } catch (e) {
     console.warn('[panel] Failed to cleanup old metrics:', e.message);
@@ -1264,12 +1019,7 @@ app.get('*', requireAuth, (req, res) => {
   await refreshSchedulesFromDb();
   
   // Start monitoring services
-  systemMonitor.start(5000); // Update every 5 seconds
   fileMonitor.start();
-  analytics.start();
-  
-  // Store system metrics every minute
-  setInterval(storeSystemMetrics, 60000);
   
   // Store online player metrics every 5 minutes
   setInterval(storeOnlineMetrics, 5 * 60000);
