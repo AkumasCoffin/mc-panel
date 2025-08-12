@@ -128,30 +128,6 @@ async function initSchema() {
       message TEXT NOT NULL
     )`);
 
-  // System monitoring tables
-  await run(`
-    CREATE TABLE IF NOT EXISTS system_metrics (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      cpu_usage REAL,
-      cpu_cores INTEGER,
-      memory_used INTEGER,
-      memory_total INTEGER,
-      memory_usage REAL,
-      disk_used INTEGER,
-      disk_total INTEGER,
-      disk_usage REAL,
-      network_rx INTEGER,
-      network_tx INTEGER,
-      network_rx_rate INTEGER,
-      network_tx_rate INTEGER,
-      uptime INTEGER,
-      load_1 REAL,
-      load_5 REAL,
-      load_15 REAL,
-      recorded_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )`);
-  await run(`CREATE INDEX IF NOT EXISTS ix_system_metrics_time ON system_metrics(recorded_at)`);
-
   // File monitoring tables
   await run(`
     CREATE TABLE IF NOT EXISTS banned_players (
@@ -210,19 +186,6 @@ async function initSchema() {
       changed_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`);
   await run(`CREATE INDEX IF NOT EXISTS ix_file_changes_time ON file_changes(changed_at)`);
-
-  // Player analytics tables
-  await run(`
-    CREATE TABLE IF NOT EXISTS player_analytics (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      date TEXT NOT NULL,
-      unique_players INTEGER DEFAULT 0,
-      total_sessions INTEGER DEFAULT 0,
-      total_playtime INTEGER DEFAULT 0,
-      peak_online INTEGER DEFAULT 0,
-      avg_session_duration REAL DEFAULT 0
-    )`);
-  await run(`CREATE UNIQUE INDEX IF NOT EXISTS ux_player_analytics_date ON player_analytics(date)`);
 
   // Online player count tracking for performance history
   await run(`
