@@ -7,6 +7,15 @@ import com.akumas.mcpanel.events.ConsoleCapture;
 import com.akumas.mcpanel.events.PlayerEventTracker;
 import com.akumas.mcpanel.events.ServerEventTracker;
 
+import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.event.server.ServerStartedEvent;
+import net.minecraftforge.event.server.ServerStoppingEvent;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.fml.event.lifecycle.FMLDedicatedServerSetupEvent;
+import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.fml.loading.FMLEnvironment;
+
 import java.util.logging.Logger;
 import java.util.logging.Level;
 import java.util.concurrent.Executors;
@@ -27,9 +36,10 @@ import java.util.concurrent.TimeUnit;
  * - Live console/log capture and command execution
  * - Chat message relay and web command interface
  * - Event tracking for deaths, achievements, and item/block interactions
+ * 
+ * This mod is SERVER-SIDE ONLY and does not need to be installed on clients.
  */
-// Forge annotation that gets added during compile time
-@net.minecraftforge.fml.common.Mod("mcpanel")
+@Mod("mcpanel")
 public class MCPanelMod {
     public static final String MOD_ID = "mcpanel";
     private static final Logger LOGGER = Logger.getLogger(MCPanelMod.class.getName());
@@ -51,12 +61,21 @@ public class MCPanelMod {
     private static final int DATA_UPDATE_INTERVAL_SECONDS = 5;
     
     public MCPanelMod() {
-        LOGGER.info("MC Panel Data Collector mod initializing...");
+        // Only initialize on server side
+        if (FMLEnvironment.dist != Dist.DEDICATED_SERVER) {
+            LOGGER.info("MC Panel mod is server-side only. Not initializing on client.");
+            return;
+        }
+        
+        LOGGER.info("MC Panel Data Collector mod initializing on server...");
         instance = this;
         
         try {
             initializeComponents();
-            setup();
+            
+            // Register this mod instance to receive Forge events
+            MinecraftForge.EVENT_BUS.register(this);
+            
             LOGGER.info("MC Panel Data Collector mod initialized successfully");
         } catch (Exception e) {
             LOGGER.log(Level.SEVERE, "Failed to initialize MC Panel mod", e);
@@ -77,56 +96,56 @@ public class MCPanelMod {
         playerTracker = new PlayerEventTracker();
         serverTracker = new ServerEventTracker();
         
-        LOGGER.info("MC Panel components initialized");
-    }
-    
-    private void setup() {
-        LOGGER.info("MC Panel mod setup starting...");
-        
-        // Register event handlers
-        registerEventHandlers();
-        
-        // Start console capture
-        startConsoleCapture();
-        
-        // Start the data server in a separate thread to avoid blocking mod loading
-        Thread serverThread = new Thread(() -> {
-            try {
-                Thread.sleep(5000); // Wait 5 seconds for server to fully start
-                startDataServer();
-                startDataUpdateScheduler();
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                LOGGER.log(Level.WARNING, "Server startup thread interrupted", e);
-            }
-        });
-        serverThread.setDaemon(true);
-        serverThread.setName("MCPanel-Startup");
-        serverThread.start();
-        
         // Register shutdown hook
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             LOGGER.info("Shutting down MC Panel data collector...");
             shutdown();
         }));
         
+        LOGGER.info("MC Panel components initialized");
+    }
+    
+    @SubscribeEvent
+    public void onServerSetup(FMLDedicatedServerSetupEvent event) {
+        LOGGER.info("MC Panel mod setup starting...");
+        
+        // Register event handlers with Forge
+        registerEventHandlers();
+        
+        // Start console capture
+        startConsoleCapture();
+        
         LOGGER.info("MC Panel mod setup completed");
+    }
+    
+    @SubscribeEvent
+    public void onServerStarted(ServerStartedEvent event) {
+        LOGGER.info("Server started, initializing MC Panel data server...");
+        
+        // Start the data server after the server is fully started
+        startDataServer();
+        startDataUpdateScheduler();
+    }
+    
+    @SubscribeEvent
+    public void onServerStopping(ServerStoppingEvent event) {
+        LOGGER.info("Server stopping, shutting down MC Panel...");
+        shutdown();
     }
     
     private void registerEventHandlers() {
         try {
             LOGGER.info("Registering event handlers...");
             
-            // Register Forge event handlers when available
-            // TODO: Add proper Forge event registration when APIs are available:
-            // MinecraftForge.EVENT_BUS.register(eventHandlers);
-            // MinecraftForge.EVENT_BUS.register(chatRelay);
-            // MinecraftForge.EVENT_BUS.register(playerTracker);
-            // MinecraftForge.EVENT_BUS.register(serverTracker);
+            // Register Forge event handlers
+            MinecraftForge.EVENT_BUS.register(eventHandlers);
+            MinecraftForge.EVENT_BUS.register(chatRelay);
+            MinecraftForge.EVENT_BUS.register(playerTracker);
+            MinecraftForge.EVENT_BUS.register(serverTracker);
             
             LOGGER.info("Event handlers registered successfully");
         } catch (Exception e) {
-            LOGGER.log(Level.WARNING, "Could not register all event handlers (Forge APIs not available)", e);
+            LOGGER.log(Level.WARNING, "Could not register all event handlers", e);
         }
     }
     
