@@ -43,3 +43,9 @@ temp/
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# Build artifacts
+forge-mod/.gradle/
+forge-mod/build/
+mc-data-collector/.gradle/
+mc-data-collector/build/
